@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/grafana/{entity}")
-public class GrafanaEntityController extends DynamicRestController {
+public class GrafanaEntityController extends GenericEntityController {
 
     public GrafanaEntityController(EntityRegistry registry, ObjectMapper objectMapper) {
         super(registry, objectMapper);

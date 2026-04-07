@@ -15,7 +15,7 @@ import java.util.Map;
  */
 @RequiredArgsConstructor
 @SuppressWarnings({ "unchecked", "rawtypes" })
-public abstract class DynamicRestController {
+public abstract class GenericEntityController {
 
     private final EntityRegistry registry;
     private final ObjectMapper objectMapper;

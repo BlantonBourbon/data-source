@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/user/{entity}")
-public class UserEntityController extends DynamicRestController {
+public class UserEntityController extends GenericEntityController {
 
     public UserEntityController(EntityRegistry registry, ObjectMapper objectMapper) {
         super(registry, objectMapper);
