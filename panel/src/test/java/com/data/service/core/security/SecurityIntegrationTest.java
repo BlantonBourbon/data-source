@@ -63,7 +63,7 @@ class SecurityIntegrationTest {
 
     @Test
     void unauthenticatedApiRequestReturns401InsteadOfLoginRedirect() throws Exception {
-        mockMvc.perform(get("/api/cryptoassets"))
+        mockMvc.perform(get("/api/user/cryptoassets"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -118,6 +118,12 @@ class SecurityIntegrationTest {
     void oauth2AuthenticatedUserCannotAccessGrafanaApplicationEndpoint() throws Exception {
         mockMvc.perform(get("/api/grafana/me").with(oauth2Login()))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void legacyGenericRouteDoesNotResolveForAuthenticatedUser() throws Exception {
+        mockMvc.perform(get("/api/cryptoassets").with(oauth2Login()))
+                .andExpect(status().isNotFound());
     }
 
     @Test

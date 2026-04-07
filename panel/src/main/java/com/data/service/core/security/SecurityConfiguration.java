@@ -54,7 +54,7 @@ public class SecurityConfiguration {
                                                        ReturnUrlAuthenticationSuccessHandler successHandler,
                                                        LogoutSuccessHandler logoutSuccessHandler,
                                                        OAuth2UserService<OAuth2UserRequest, OAuth2User> oauth2UserService) throws Exception {
-        http.securityMatcher("/api/**", "/oauth2/**", "/login/oauth2/**", "/h2-console/**")
+        http.securityMatcher("/api/user/**", "/api/me", "/api/auth/**", "/oauth2/**", "/login/oauth2/**", "/h2-console/**")
                 .authorizeHttpRequests(authorize -> {
                     authorize.requestMatchers("/api/auth/login", "/api/auth/logout", "/oauth2/**", "/login/oauth2/**").permitAll();
                     if (securityProperties.isH2ConsoleEnabled()) {
@@ -71,7 +71,7 @@ public class SecurityConfiguration {
                         .clearAuthentication(true)
                         .deleteCookies("JSESSIONID")
                         .logoutSuccessHandler(logoutSuccessHandler))
-                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/h2-console/**"))
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/user/**", "/api/me", "/api/auth/**", "/h2-console/**"))
                 .headers(headers -> {
                     if (securityProperties.isH2ConsoleEnabled()) {
                         headers.frameOptions(frameOptions -> frameOptions.sameOrigin());
@@ -80,7 +80,7 @@ public class SecurityConfiguration {
                 .exceptionHandling(exceptionHandling -> exceptionHandling
                         .defaultAuthenticationEntryPointFor(
                                 new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
-                                new AntPathRequestMatcher("/api/**")))
+                                new AntPathRequestMatcher("/api/user/**")))
                 .httpBasic(httpBasic -> httpBasic.disable())
                 .formLogin(formLogin -> formLogin.disable());
 

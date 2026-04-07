@@ -11,15 +11,11 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
 /**
- * Single dynamic REST controller that handles all entity CRUD operations.
- * Routes /api/{entity}/** requests to the correct GenericService via
- * EntityRegistry.
+ * Shared generic entity dispatch used by audience-scoped REST controllers.
  */
-@RestController
-@RequestMapping("/api/{entity}")
 @RequiredArgsConstructor
 @SuppressWarnings({ "unchecked", "rawtypes" })
-public class DynamicRestController {
+public abstract class DynamicRestController {
 
     private final EntityRegistry registry;
     private final ObjectMapper objectMapper;
@@ -65,7 +61,7 @@ public class DynamicRestController {
     }
 
 
-    private GenericService getServiceOrThrow(String entity) {
+    protected GenericService getServiceOrThrow(String entity) {
         if (!registry.hasEntity(entity)) {
             throw new EntityNotFoundException("Unknown entity: " + entity);
         }
