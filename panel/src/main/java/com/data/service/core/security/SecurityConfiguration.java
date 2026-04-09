@@ -52,6 +52,7 @@ public class SecurityConfiguration {
     SecurityFilterChain applicationSecurityFilterChain(HttpSecurity http,
                                                        PanelSecurityProperties securityProperties,
                                                        ReturnUrlAuthenticationSuccessHandler successHandler,
+                                                       ReturnUrlAuthenticationFailureHandler failureHandler,
                                                        LogoutSuccessHandler logoutSuccessHandler,
                                                        OAuth2UserService<OAuth2UserRequest, OAuth2User> oauth2UserService) throws Exception {
         http.securityMatcher("/api/user/**", "/api/me", "/api/auth/**", "/oauth2/**", "/login/oauth2/**", "/h2-console/**")
@@ -64,7 +65,8 @@ public class SecurityConfiguration {
                 })
                 .oauth2Login(oauth2Login -> oauth2Login
                         .userInfoEndpoint(userInfo -> userInfo.userService(oauth2UserService))
-                        .successHandler(successHandler))
+                        .successHandler(successHandler)
+                        .failureHandler(failureHandler))
                 .logout(logout -> logout
                         .logoutRequestMatcher(new AntPathRequestMatcher("/api/auth/logout", "GET"))
                         .invalidateHttpSession(true)

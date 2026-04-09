@@ -26,7 +26,7 @@ public class AuthController {
     public void login(@RequestParam(required = false) String returnUrl,
                       HttpServletRequest request,
                       HttpServletResponse response) throws IOException {
-        String normalizedReturnUrl = normalizeReturnUrl(returnUrl);
+        String normalizedReturnUrl = ReturnUrlSupport.normalize(returnUrl);
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
         if (authentication != null && authentication.isAuthenticated() && !(authentication instanceof AnonymousAuthenticationToken)) {
@@ -36,13 +36,5 @@ public class AuthController {
 
         request.getSession(true).setAttribute(RETURN_URL_SESSION_ATTRIBUTE, normalizedReturnUrl);
         response.sendRedirect("/oauth2/authorization/" + securityProperties.getPingFederate().getRegistrationId());
-    }
-
-    private String normalizeReturnUrl(String returnUrl) {
-        if (returnUrl == null || returnUrl.isBlank() || !returnUrl.startsWith("/") || returnUrl.startsWith("//")) {
-            return "/";
-        }
-
-        return returnUrl;
     }
 }

@@ -16,15 +16,6 @@ public class ReturnUrlAuthenticationSuccessHandler implements AuthenticationSucc
     public void onAuthenticationSuccess(HttpServletRequest request,
                                         HttpServletResponse response,
                                         Authentication authentication) throws IOException, ServletException {
-        String returnUrl = "/";
-        if (request.getSession(false) != null) {
-            Object sessionValue = request.getSession(false).getAttribute(AuthController.RETURN_URL_SESSION_ATTRIBUTE);
-            if (sessionValue instanceof String stringValue && stringValue.startsWith("/") && !stringValue.startsWith("//")) {
-                returnUrl = stringValue;
-            }
-            request.getSession(false).removeAttribute(AuthController.RETURN_URL_SESSION_ATTRIBUTE);
-        }
-
-        response.sendRedirect(returnUrl);
+        response.sendRedirect(ReturnUrlSupport.resolveAndClear(request));
     }
 }

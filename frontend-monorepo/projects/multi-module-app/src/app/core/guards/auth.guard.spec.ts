@@ -8,10 +8,12 @@ describe('AuthGuard', () => {
   let guard: AuthGuard;
   let authServiceStub: jasmine.SpyObj<AuthService>;
   let routerSpy: jasmine.SpyObj<Router>;
+  const unauthenticatedRedirect = { redirectedTo: '/auth/login' } as never;
 
   beforeEach(() => {
     authServiceStub = jasmine.createSpyObj<AuthService>('AuthService', ['isAuthenticated', 'login']);
     routerSpy = jasmine.createSpyObj<Router>('Router', ['createUrlTree']);
+    routerSpy.createUrlTree.and.returnValue(unauthenticatedRedirect);
 
     TestBed.configureTestingModule({
       providers: [
@@ -33,13 +35,15 @@ describe('AuthGuard', () => {
     expect(authServiceStub.login).not.toHaveBeenCalled();
   });
 
-  it('restarts backend login for unauthenticated users', () => {
+  it('redirects unauthenticated users to the login route with returnUrl', () => {
     authServiceStub.isAuthenticated.and.returnValue(false);
 
     const result = guard.canActivate({} as never, { url: '/workspace' } as never);
 
-    expect(result).toBeFalse();
-    expect(authServiceStub.login).toHaveBeenCalledWith('/workspace');
-    expect(routerSpy.createUrlTree).not.toHaveBeenCalled();
+    expect(result).toBe(unauthenticatedRedirect);
+    expect(authServiceStub.login).not.toHaveBeenCalled();
+    expect(routerSpy.createUrlTree).toHaveBeenCalledWith(['/auth/login'], {
+      queryParams: { returnUrl: '/workspace' }
+    });
   });
 });
