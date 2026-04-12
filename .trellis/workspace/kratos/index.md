@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 0
-- **Last Active**: -
+- **Total Sessions**: 1
+- **Last Active**: 2026-04-12
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~0 | Active |
+| `journal-1.md` | ~107 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -27,8 +27,9 @@
 ## Session History
 
 <!-- @@@auto:session-history -->
-| # | Date | Title | Commits |
-|---|------|-------|---------|
+| # | Date | Title | Commits | Branch |
+|---|------|-------|---------|--------|
+| 1 | 2026-04-12 | Flatten and Squash Auth Commits | `1e2c845`, `6304ceb` | `main` |
 <!-- @@@/auto:session-history -->
 
 ---
