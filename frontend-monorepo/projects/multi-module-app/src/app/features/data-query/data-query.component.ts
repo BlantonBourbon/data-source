@@ -1,6 +1,7 @@
 import { Component, OnInit, ViewChild, Inject, Input } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { ColDef, GridReadyEvent, CellContextMenuEvent, ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
+import { firstValueFrom } from 'rxjs';
 
 // Register AG Grid Modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -8,6 +9,7 @@ import { MatMenuTrigger } from '@angular/material/menu';
 import { MatDialog, MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 
 import { DataQueryConfig } from '../../core/config/data-query.config';
+import { AuthService } from '../../core/services/auth.service';
 import { QueryCondition } from '../../shared/components/query-builder/query-builder.component';
 
 export interface QueryTab {
@@ -79,13 +81,16 @@ export class DataQueryComponent implements OnInit {
   queryTabs: QueryTab[] = [];
   selectedTabIndex = 0;
   tabCounter = 1;
+  exportEmailInput = '';
+  isExporting = false;
 
   @ViewChild('contextMenuTrigger') contextMenu!: MatMenuTrigger;
   contextMenuPosition = { x: '0px', y: '0px' };
 
   constructor(
     private http: HttpClient,
-    private dialog: MatDialog
+    private dialog: MatDialog,
+    private authService: AuthService
   ) {}
 
   ngOnInit() {
@@ -348,6 +353,62 @@ export class DataQueryComponent implements OnInit {
     // If you need specific reset behavior for forms, implement it here or via ViewChild queryBuilder
   }
 
+  get exportEmailPlaceholder(): string {
+    return this.authService.currentUserValue?.email || '请输入邮箱，多个邮箱可用逗号分隔';
+  }
+
+  exportSelectedRowsAndSendEmail() {
+    if (this.isExporting || !this.gridApi || !this.queryTabs[this.selectedTabIndex]) {
+      return;
+    }
+
+    const selectedRows = this.gridApi
+      .getSelectedNodes()
+      .map((node: { data: any }) => node.data)
+      .filter((row: any) => !!row);
+
+    if (selectedRows.length === 0) {
+      window.alert('请先选择要导出的结果行。');
+      return;
+    }
+
+    const recipientEmails = this.parseRecipientEmails(this.exportEmailInput || this.exportEmailPlaceholder);
+    if (recipientEmails.length === 0) {
+      window.alert('请输入至少一个有效邮箱地址。');
+      return;
+    }
+
+    const activeTab = this.queryTabs[this.selectedTabIndex];
+    const activeColDefs = activeTab.colDefs || this.colDefs;
+    const fileName = `${this.sanitizeFileName(activeTab.title || 'query-result')}-${new Date().toISOString().slice(0, 10)}.csv`;
+    const csvContent = this.buildCsvContent(selectedRows, activeColDefs);
+    const csvBlob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+
+    this.downloadBlob(csvBlob, fileName);
+
+    this.isExporting = true;
+    this.blobToBase64(csvBlob)
+      .then(fileBase64 => {
+        const payload = {
+          recipients: recipientEmails,
+          fileName,
+          fileBase64,
+          rowCount: selectedRows.length
+        };
+        return firstValueFrom(this.http.post(`${this.config.apiEndpoint}/export/email`, payload));
+      })
+      .then(() => {
+        window.alert(`导出成功，邮件已发送至：${recipientEmails.join(', ')}`);
+      })
+      .catch(error => {
+        console.error('Failed to send export email', error);
+        window.alert('Excel 已下载，但发送邮件失败，请稍后重试。');
+      })
+      .finally(() => {
+        this.isExporting = false;
+      });
+  }
+
   private withReadableHeaders(columnDefs: ColDef[]): ColDef[] {
     return columnDefs.map(columnDef => {
       const minWidth = this.getPreferredMinWidth(columnDef);
@@ -415,5 +476,73 @@ export class DataQueryComponent implements OnInit {
         : DataQueryComponent.maxEstimatedColumnWidth;
 
     return Math.min(Math.max(estimatedWidth, minWidth), maxWidth);
+  }
+
+  private parseRecipientEmails(rawEmails: string): string[] {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return Array.from(
+      new Set(
+        (rawEmails || '')
+          .split(/[,\s;]+/)
+          .map(email => email.trim())
+          .filter(email => emailRegex.test(email))
+      )
+    );
+  }
+
+  private buildCsvContent(rows: any[], columns: ColDef[]): string {
+    const fields = columns.map(column => column.field).filter((field): field is string => !!field);
+    const header = fields.map(field => this.escapeCsvValue(this.resolveHeaderLabel(field, columns))).join(',');
+    const body = rows.map(row => fields.map(field => this.escapeCsvValue(row[field])).join(',')).join('\n');
+    return `${header}\n${body}`;
+  }
+
+  private resolveHeaderLabel(field: string, columns: ColDef[]): string {
+    return columns.find(column => column.field === field)?.headerName || field;
+  }
+
+  private escapeCsvValue(value: unknown): string {
+    if (value === null || value === undefined) {
+      return '';
+    }
+
+    const normalized = String(value).replace(/"/g, '""');
+    return /[",\n]/.test(normalized) ? `"${normalized}"` : normalized;
+  }
+
+  private sanitizeFileName(fileName: string): string {
+    return fileName.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, '_');
+  }
+
+  private downloadBlob(blob: Blob, fileName: string) {
+    const objectUrl = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = fileName;
+    anchor.click();
+    window.URL.revokeObjectURL(objectUrl);
+  }
+
+  private blobToBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        if (typeof result !== 'string') {
+          reject(new Error('Failed to read blob as base64 string.'));
+          return;
+        }
+
+        const base64 = result.split(',')[1];
+        if (!base64) {
+          reject(new Error('Missing base64 payload.'));
+          return;
+        }
+
+        resolve(base64);
+      };
+      reader.onerror = () => reject(reader.error || new Error('Failed to convert blob to base64.'));
+      reader.readAsDataURL(blob);
+    });
   }
 }

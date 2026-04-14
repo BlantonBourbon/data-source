@@ -217,6 +217,7 @@ p {
   .tab-filter-bar {
     display: flex;
     align-items: center;
+    gap: 12px;
     padding: 12px 24px;
     background-color: #fcfcfc;
     border-bottom: 1px solid #e0e0e0;
@@ -246,6 +247,11 @@ p {
       &:focus {
         border-bottom: 2px solid #0b73c2;
       }
+    }
+
+    .export-email-field {
+      width: 320px;
+      margin-bottom: -1.25em;
     }
   }
 }

@@ -39,6 +39,14 @@
     <div class="tab-filter-bar">
       <mat-icon class="filter-icon">filter_list</mat-icon>
       <input type="text" placeholder="Filter this query result..." (keyup)="applyTabFilter($event, selectedTabIndex)" />
+      <mat-form-field class="export-email-field" appearance="outline">
+        <mat-label>发送邮箱</mat-label>
+        <input matInput [(ngModel)]="exportEmailInput" [placeholder]="exportEmailPlaceholder" />
+        <mat-hint>支持多个邮箱，使用逗号/分号/空格分隔</mat-hint>
+      </mat-form-field>
+      <button mat-raised-button color="primary" (click)="exportSelectedRowsAndSendEmail()" [disabled]="isExporting">
+        {{ isExporting ? '发送中...' : '导出Excel并发邮件' }}
+      </button>
     </div>
 
     <div class="table-container">
