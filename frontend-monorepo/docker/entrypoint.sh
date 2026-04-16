@@ -5,21 +5,48 @@ json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
-validate_backend_origin() {
-  case "$1" in
+validate_origin() {
+  value="$1"
+  name="$2"
+
+  case "$value" in
     http://*|https://*) ;;
     *)
-      echo >&2 "BACKEND_ORIGIN must start with http:// or https://"
+      echo >&2 "$name must start with http:// or https://"
       exit 1
       ;;
   esac
 
-  case "$1" in
+  case "$value" in
     *" "*|*";"*|*"{"*|*"}"*)
-      echo >&2 "BACKEND_ORIGIN contains characters that would break nginx config."
+      echo >&2 "$name contains characters that would break nginx config."
       exit 1
       ;;
   esac
+}
+
+parse_origin() {
+  origin="$1"
+  scheme="${origin%%://*}"
+  authority="${origin#*://}"
+  authority="${authority%%/*}"
+
+  case "$authority" in
+    *:*)
+      host="${authority%:*}"
+      port="${authority##*:}"
+      ;;
+    *)
+      host="$authority"
+      if [ "$scheme" = "https" ]; then
+        port=443
+      else
+        port=80
+      fi
+      ;;
+  esac
+
+  printf '%s\n%s\n%s\n' "$scheme" "$host" "$port"
 }
 
 validate_boolean() {
@@ -52,8 +79,17 @@ if [ "$#" -eq 0 ] || [ "$1" = "nginx" ]; then
   export AUTH_USER_CONTEXT_ENDPOINT="${AUTH_USER_CONTEXT_ENDPOINT:-/api/me}"
   export AUTH_REQUIRE_USER_CONTEXT="${AUTH_REQUIRE_USER_CONTEXT:-false}"
 
-  validate_backend_origin "$BACKEND_ORIGIN"
+  validate_origin "$BACKEND_ORIGIN" "BACKEND_ORIGIN"
+  validate_origin "$PUBLIC_ORIGIN" "PUBLIC_ORIGIN"
   validate_boolean "$AUTH_REQUIRE_USER_CONTEXT"
+
+  ORIGIN_PARTS="$(parse_origin "$PUBLIC_ORIGIN")"
+  PUBLIC_SCHEME="$(printf '%s\n' "$ORIGIN_PARTS" | sed -n '1p')"
+  PUBLIC_HOST="$(printf '%s\n' "$ORIGIN_PARTS" | sed -n '2p')"
+  PUBLIC_PORT="$(printf '%s\n' "$ORIGIN_PARTS" | sed -n '3p')"
+  export PUBLIC_SCHEME
+  export PUBLIC_HOST
+  export PUBLIC_PORT
 
   mkdir -p \
     /tmp/nginx/conf.d \
@@ -99,7 +135,9 @@ server {
     proxy_set_header Host \$proxy_host;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Forwarded-Host $PUBLIC_HOST;
+    proxy_set_header X-Forwarded-Port $PUBLIC_PORT;
+    proxy_set_header X-Forwarded-Proto $PUBLIC_SCHEME;
   }
 
   location = /oauth2 {
@@ -112,7 +150,9 @@ server {
     proxy_set_header Host \$proxy_host;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Forwarded-Host $PUBLIC_HOST;
+    proxy_set_header X-Forwarded-Port $PUBLIC_PORT;
+    proxy_set_header X-Forwarded-Proto $PUBLIC_SCHEME;
   }
 
   location = /oauth {
@@ -125,7 +165,9 @@ server {
     proxy_set_header Host \$proxy_host;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Forwarded-Host $PUBLIC_HOST;
+    proxy_set_header X-Forwarded-Port $PUBLIC_PORT;
+    proxy_set_header X-Forwarded-Proto $PUBLIC_SCHEME;
   }
 
   location = /login/oauth2 {
@@ -138,7 +180,9 @@ server {
     proxy_set_header Host \$proxy_host;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Forwarded-Host $PUBLIC_HOST;
+    proxy_set_header X-Forwarded-Port $PUBLIC_PORT;
+    proxy_set_header X-Forwarded-Proto $PUBLIC_SCHEME;
   }
 }
 EOF

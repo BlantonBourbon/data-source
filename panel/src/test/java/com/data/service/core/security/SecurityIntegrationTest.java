@@ -3,6 +3,7 @@ package com.data.service.core.security;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.web.ServerProperties;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -15,6 +16,8 @@ import java.security.cert.X509Certificate;
 import java.util.List;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.oauth2Login;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -28,6 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @TestPropertySource(properties = {
         "panel.security.ping-federate.registration-id=pingfed",
         "panel.security.ping-federate.logout-success-url=/",
+        "panel.security.frontend-base-url=https://app.example.test",
         "panel.security.claim-mapping.username-claim=preferred_username",
         "panel.security.claim-mapping.display-name-claim=name",
         "panel.security.claim-mapping.email-claim=email",
@@ -46,12 +50,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.security.oauth2.client.provider.pingfed.authorization-uri=https://pingfed.example.test/as/authorization.oauth2",
         "spring.security.oauth2.client.provider.pingfed.token-uri=https://pingfed.example.test/as/token.oauth2",
         "spring.security.oauth2.client.provider.pingfed.user-info-uri=https://pingfed.example.test/idp/userinfo.openid",
-        "spring.security.oauth2.client.provider.pingfed.user-name-attribute=sub"
+        "spring.security.oauth2.client.provider.pingfed.user-name-attribute=sub",
+        "server.servlet.session.cookie.same-site=lax"
 })
 class SecurityIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private ServerProperties serverProperties;
 
     @Test
     void loginEntrypointRedirectsToOAuthAuthorizationEndpoint() throws Exception {
@@ -59,6 +67,24 @@ class SecurityIntegrationTest {
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", "/oauth2/authorization/pingfed"))
                 .andExpect(request().sessionAttribute("auth.return_url", "/workspace"));
+    }
+
+    @Test
+    void oauthAuthorizationRedirectUsesConfiguredFrontendOriginForCallback() throws Exception {
+        mockMvc.perform(get("/oauth2/authorization/pingfed")
+                        .header("Host", "api.example.test")
+                        .header("X-Forwarded-Host", "app.example.test")
+                        .header("X-Forwarded-Port", "443")
+                        .header("X-Forwarded-Proto", "https"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", containsString(
+                        "redirect_uri=https://app.example.test/login/oauth2/code/pingfed")));
+    }
+
+    @Test
+    void sessionCookieSameSitePolicyAllowsOidcCallbackNavigation() {
+        assertThat(serverProperties.getServlet().getSession().getCookie().getSameSite())
+                .hasToString("LAX");
     }
 
     @Test

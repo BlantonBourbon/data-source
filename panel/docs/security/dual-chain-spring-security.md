@@ -25,7 +25,9 @@ This keeps browser user traffic working without a client certificate while still
 - Keep Grafana traffic on a dedicated hostname or ingress route when possible.
 - Configure the Spring Boot trust store so only trusted client certificates are accepted.
 - Keep `panel.security.application-clients[*].certificate-cn` scoped to the smallest allowed set.
-- Use `server.servlet.session.cookie.same-site=strict`, `http-only=true`, and `secure=true` in production.
+- Forward the public frontend origin (`X-Forwarded-Host`, `X-Forwarded-Port`, `X-Forwarded-Proto`) to Spring Boot and enable forwarded-header processing so `{baseUrl}` resolves to the browser-facing callback origin.
+- Use `server.servlet.session.cookie.same-site=lax`, `http-only=true`, and `secure=true` in production so the OIDC authorization-code callback can bring the session cookie back.
+- When the backend has multiple replicas, use sticky sessions or a shared session store; otherwise the authorization request can be created on one pod and the callback can land on another, which also surfaces as `authorization_request_not_found`.
 
 ## When to move to a dedicated listener
 

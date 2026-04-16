@@ -57,6 +57,7 @@ The container now runs as the non-root `nginx` user, listens on port `8080`, and
 
 - `PUBLIC_ORIGIN`: public origin of the frontend, used to build default OAuth redirect URLs.
 - `BACKEND_ORIGIN`: backend origin that receives proxied `/api/*` requests.
+- The nginx container also forwards `PUBLIC_ORIGIN` to the backend as `X-Forwarded-*` headers so Spring Security can generate `/login/oauth2/code/*` callbacks on the public frontend origin instead of the internal backend host.
 - `AUTH_ISSUER`: OAuth/OpenID issuer URL.
 - `AUTH_CLIENT_ID`: OAuth/OpenID client ID.
 - `AUTH_DISCOVERY_URL` (optional): explicit discovery document URL.
@@ -65,6 +66,8 @@ The container now runs as the non-root `nginx` user, listens on port `8080`, and
 - `AUTH_POST_LOGOUT_REDIRECT_URI` (optional): overrides the default `${PUBLIC_ORIGIN}/auth/login`.
 - `AUTH_USER_CONTEXT_ENDPOINT` (optional): backend endpoint used to resolve frontend RBAC. Defaults to `/api/me`.
 - `AUTH_REQUIRE_USER_CONTEXT` (optional): `true` to fail sign-in/session restore when the backend user context cannot be loaded. Defaults to `false`.
+
+If the backend runs with more than one replica in Kubernetes, the login-start request and the `/login/oauth2/code/*` callback must resolve to the same HTTP session. Use sticky sessions at the ingress/service layer or back the session with a shared store such as Spring Session.
 
 ## Running unit tests
 

@@ -9,15 +9,21 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
+import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.web.filter.ForwardedHeaderFilter;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -26,6 +32,34 @@ import java.util.Set;
 @EnableMethodSecurity
 @EnableConfigurationProperties(PanelSecurityProperties.class)
 public class SecurityConfiguration {
+
+    @Bean
+    ForwardedHeaderFilter forwardedHeaderFilter() {
+        return new ForwardedHeaderFilter();
+    }
+
+    @Bean
+    OAuth2AuthorizationRequestResolver authorizationRequestResolver(ClientRegistrationRepository clientRegistrationRepository,
+                                                                    PanelSecurityProperties securityProperties) {
+        DefaultOAuth2AuthorizationRequestResolver delegate =
+                new DefaultOAuth2AuthorizationRequestResolver(clientRegistrationRepository, "/oauth2/authorization");
+
+        return new OAuth2AuthorizationRequestResolver() {
+            @Override
+            public OAuth2AuthorizationRequest resolve(jakarta.servlet.http.HttpServletRequest request) {
+                return customizeAuthorizationRequest(delegate.resolve(request), securityProperties.getFrontendBaseUrl());
+            }
+
+            @Override
+            public OAuth2AuthorizationRequest resolve(jakarta.servlet.http.HttpServletRequest request,
+                                                      String clientRegistrationId) {
+                return customizeAuthorizationRequest(
+                        delegate.resolve(request, clientRegistrationId),
+                        securityProperties.getFrontendBaseUrl()
+                );
+            }
+        };
+    }
 
     @Bean
     @Order(1)
@@ -51,6 +85,7 @@ public class SecurityConfiguration {
     @Order(2)
     SecurityFilterChain applicationSecurityFilterChain(HttpSecurity http,
                                                        PanelSecurityProperties securityProperties,
+                                                       OAuth2AuthorizationRequestResolver authorizationRequestResolver,
                                                        ReturnUrlAuthenticationSuccessHandler successHandler,
                                                        ReturnUrlAuthenticationFailureHandler failureHandler,
                                                        LogoutSuccessHandler logoutSuccessHandler,
@@ -64,6 +99,8 @@ public class SecurityConfiguration {
                     authorize.anyRequest().authenticated();
                 })
                 .oauth2Login(oauth2Login -> oauth2Login
+                        .authorizationEndpoint(authorizationEndpoint ->
+                                authorizationEndpoint.authorizationRequestResolver(authorizationRequestResolver))
                         .userInfoEndpoint(userInfo -> userInfo.userService(oauth2UserService))
                         .successHandler(successHandler)
                         .failureHandler(failureHandler))
@@ -118,5 +155,31 @@ public class SecurityConfiguration {
 
             return new DefaultOAuth2User(authorities, user.getAttributes(), userNameAttributeName);
         };
+    }
+
+    private OAuth2AuthorizationRequest customizeAuthorizationRequest(OAuth2AuthorizationRequest authorizationRequest,
+                                                                     String frontendBaseUrl) {
+        if (authorizationRequest == null || frontendBaseUrl == null || frontendBaseUrl.isBlank()) {
+            return authorizationRequest;
+        }
+
+        String redirectUri = authorizationRequest.getRedirectUri();
+        if (redirectUri == null || redirectUri.isBlank()) {
+            return authorizationRequest;
+        }
+
+        String normalizedBaseUrl = frontendBaseUrl.endsWith("/")
+                ? frontendBaseUrl.substring(0, frontendBaseUrl.length() - 1)
+                : frontendBaseUrl;
+
+        String rewrittenRedirectUri = UriComponentsBuilder.fromUriString(normalizedBaseUrl)
+                .replacePath(UriComponentsBuilder.fromUriString(redirectUri).build().getPath())
+                .replaceQuery(UriComponentsBuilder.fromUriString(redirectUri).build().getQuery())
+                .build(true)
+                .toUriString();
+
+        return OAuth2AuthorizationRequest.from(authorizationRequest)
+                .redirectUri(rewrittenRedirectUri)
+                .build();
     }
 }
