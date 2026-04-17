@@ -2,6 +2,7 @@ package com.data.service.core.security;
 
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -9,9 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
-import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.client.web.AuthorizationRequestRepository;
 import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
@@ -22,7 +21,6 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
-import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.filter.ForwardedHeaderFilter;
 
 import java.util.LinkedHashSet;
@@ -39,26 +37,36 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    OAuth2AuthorizationRequestResolver authorizationRequestResolver(ClientRegistrationRepository clientRegistrationRepository,
-                                                                    PanelSecurityProperties securityProperties) {
-        DefaultOAuth2AuthorizationRequestResolver delegate =
-                new DefaultOAuth2AuthorizationRequestResolver(clientRegistrationRepository, "/oauth2/authorization");
+    AuthorizationRequestRepository<OAuth2AuthorizationRequest> authorizationRequestRepository() {
+        return new LoggingAuthorizationRequestRepository();
+    }
 
-        return new OAuth2AuthorizationRequestResolver() {
-            @Override
-            public OAuth2AuthorizationRequest resolve(jakarta.servlet.http.HttpServletRequest request) {
-                return customizeAuthorizationRequest(delegate.resolve(request), securityProperties.getFrontendBaseUrl());
-            }
+    @Bean
+    @Order(0)
+    @ConditionalOnProperty(prefix = "panel.security.local-dev", name = "auth-disabled", havingValue = "true")
+    SecurityFilterChain localDevelopmentSecurityFilterChain(HttpSecurity http,
+                                                            PanelSecurityProperties securityProperties,
+                                                            LogoutSuccessHandler logoutSuccessHandler) throws Exception {
+        http.securityMatcher("/api/user/**", "/api/me", "/api/auth/**", "/oauth2/**", "/login/oauth2/**", "/h2-console/**")
+                .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll())
+                .logout(logout -> logout
+                        .logoutRequestMatcher(new AntPathRequestMatcher("/api/auth/logout", "GET"))
+                        .invalidateHttpSession(true)
+                        .clearAuthentication(true)
+                        .deleteCookies("JSESSIONID")
+                        .logoutSuccessHandler(logoutSuccessHandler))
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/user/**", "/api/me", "/api/auth/**", "/h2-console/**"))
+                .headers(headers -> {
+                    if (securityProperties.isH2ConsoleEnabled()) {
+                        headers.frameOptions(frameOptions -> frameOptions.sameOrigin());
+                    }
+                })
+                .requestCache(requestCache -> requestCache.disable())
+                .oauth2Login(oauth2Login -> oauth2Login.disable())
+                .httpBasic(httpBasic -> httpBasic.disable())
+                .formLogin(formLogin -> formLogin.disable());
 
-            @Override
-            public OAuth2AuthorizationRequest resolve(jakarta.servlet.http.HttpServletRequest request,
-                                                      String clientRegistrationId) {
-                return customizeAuthorizationRequest(
-                        delegate.resolve(request, clientRegistrationId),
-                        securityProperties.getFrontendBaseUrl()
-                );
-            }
-        };
+        return http.build();
     }
 
     @Bean
@@ -85,7 +93,7 @@ public class SecurityConfiguration {
     @Order(2)
     SecurityFilterChain applicationSecurityFilterChain(HttpSecurity http,
                                                        PanelSecurityProperties securityProperties,
-                                                       OAuth2AuthorizationRequestResolver authorizationRequestResolver,
+                                                       AuthorizationRequestRepository<OAuth2AuthorizationRequest> authorizationRequestRepository,
                                                        ReturnUrlAuthenticationSuccessHandler successHandler,
                                                        ReturnUrlAuthenticationFailureHandler failureHandler,
                                                        LogoutSuccessHandler logoutSuccessHandler,
@@ -100,7 +108,8 @@ public class SecurityConfiguration {
                 })
                 .oauth2Login(oauth2Login -> oauth2Login
                         .authorizationEndpoint(authorizationEndpoint ->
-                                authorizationEndpoint.authorizationRequestResolver(authorizationRequestResolver))
+                                authorizationEndpoint
+                                        .authorizationRequestRepository(authorizationRequestRepository))
                         .userInfoEndpoint(userInfo -> userInfo.userService(oauth2UserService))
                         .successHandler(successHandler)
                         .failureHandler(failureHandler))
@@ -155,31 +164,5 @@ public class SecurityConfiguration {
 
             return new DefaultOAuth2User(authorities, user.getAttributes(), userNameAttributeName);
         };
-    }
-
-    private OAuth2AuthorizationRequest customizeAuthorizationRequest(OAuth2AuthorizationRequest authorizationRequest,
-                                                                     String frontendBaseUrl) {
-        if (authorizationRequest == null || frontendBaseUrl == null || frontendBaseUrl.isBlank()) {
-            return authorizationRequest;
-        }
-
-        String redirectUri = authorizationRequest.getRedirectUri();
-        if (redirectUri == null || redirectUri.isBlank()) {
-            return authorizationRequest;
-        }
-
-        String normalizedBaseUrl = frontendBaseUrl.endsWith("/")
-                ? frontendBaseUrl.substring(0, frontendBaseUrl.length() - 1)
-                : frontendBaseUrl;
-
-        String rewrittenRedirectUri = UriComponentsBuilder.fromUriString(normalizedBaseUrl)
-                .replacePath(UriComponentsBuilder.fromUriString(redirectUri).build().getPath())
-                .replaceQuery(UriComponentsBuilder.fromUriString(redirectUri).build().getQuery())
-                .build(true)
-                .toUriString();
-
-        return OAuth2AuthorizationRequest.from(authorizationRequest)
-                .redirectUri(rewrittenRedirectUri)
-                .build();
     }
 }

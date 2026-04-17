@@ -1,8 +1,26 @@
-plugins {
-	id 'java'
-	id 'org.springframework.boot' version '3.4.1'
-	id 'io.spring.dependency-management' version '1.1.7'
+buildscript {
+	repositories {
+		maven {
+			url = uri('https://mirrors.cloud.tencent.com/nexus/repository/maven-public')
+			content {
+				includeGroup 'org.springframework.boot'
+				includeGroup 'io.spring.gradle'
+			}
+		}
+		maven {
+			url = uri('https://maven.aliyun.com/repository/public')
+		}
+		mavenCentral()
+	}
+	dependencies {
+		classpath 'org.springframework.boot:spring-boot-gradle-plugin:3.4.1'
+		classpath 'io.spring.gradle:dependency-management-plugin:1.1.7'
+	}
 }
+
+apply plugin: 'java'
+apply plugin: 'org.springframework.boot'
+apply plugin: 'io.spring.dependency-management'
 
 
 group = 'com.data.service'
@@ -24,6 +42,9 @@ configurations {
 }
 
 repositories {
+	maven {
+		url = uri('https://maven.aliyun.com/repository/public')
+	}
 	mavenCentral()
 }
 

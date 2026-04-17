@@ -45,7 +45,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.security.oauth2.client.registration.pingfed.client-id=test-client",
         "spring.security.oauth2.client.registration.pingfed.client-secret=test-secret",
         "spring.security.oauth2.client.registration.pingfed.authorization-grant-type=authorization_code",
-        "spring.security.oauth2.client.registration.pingfed.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+        "spring.security.oauth2.client.registration.pingfed.redirect-uri=https://api.example.test/login/oauth2/code/{registrationId}",
         "spring.security.oauth2.client.registration.pingfed.scope=openid,profile,email",
         "spring.security.oauth2.client.provider.pingfed.authorization-uri=https://pingfed.example.test/as/authorization.oauth2",
         "spring.security.oauth2.client.provider.pingfed.token-uri=https://pingfed.example.test/as/token.oauth2",
@@ -70,7 +70,7 @@ class SecurityIntegrationTest {
     }
 
     @Test
-    void oauthAuthorizationRedirectUsesConfiguredFrontendOriginForCallback() throws Exception {
+    void oauthAuthorizationRedirectUsesConfiguredBackendCallback() throws Exception {
         mockMvc.perform(get("/oauth2/authorization/pingfed")
                         .header("Host", "api.example.test")
                         .header("X-Forwarded-Host", "app.example.test")
@@ -78,7 +78,7 @@ class SecurityIntegrationTest {
                         .header("X-Forwarded-Proto", "https"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", containsString(
-                        "redirect_uri=https://app.example.test/login/oauth2/code/pingfed")));
+                        "redirect_uri=https://api.example.test/login/oauth2/code/pingfed")));
     }
 
     @Test

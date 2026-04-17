@@ -18,6 +18,11 @@ export interface QueryTab {
   colDefs?: ColDef[];
 }
 
+interface ExportFeedback {
+  tone: 'success' | 'error';
+  message: string;
+}
+
 @Component({
   standalone: false,
   selector: 'app-aggregation-dialog',
@@ -63,6 +68,7 @@ export class DataQueryComponent implements OnInit {
   private static readonly estimatedHeaderCharacterWidth = 10;
   private static readonly estimatedHeaderPadding = 48;
   private static readonly maxEstimatedColumnWidth = 320;
+  private static readonly emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   @Input() config!: DataQueryConfig;
 
@@ -83,6 +89,9 @@ export class DataQueryComponent implements OnInit {
   tabCounter = 1;
   exportEmailInput = '';
   isExporting = false;
+  selectedRowCount = 0;
+  visibleRowCount = 0;
+  exportFeedback: ExportFeedback | null = null;
 
   @ViewChild('contextMenuTrigger') contextMenu!: MatMenuTrigger;
   contextMenuPosition = { x: '0px', y: '0px' };
@@ -120,18 +129,21 @@ export class DataQueryComponent implements OnInit {
             this.gridApi.setGridOption('rowData', this.allData);
             this.scheduleColumnAutoSize();
           }
+          this.syncExportContext();
         });
       },
       error: err => {
         console.error('Failed to load initial data', err);
         setTimeout(() => {
           this.queryTabs[0].title = 'Error Loading Data';
+          this.syncExportContext();
         });
       }
     });
   }
 
   onQuerySubmit(conditions: QueryCondition[]) {
+    this.clearExportFeedback();
     if (!Array.isArray(conditions)) {
       conditions = [];
     }
@@ -161,6 +173,7 @@ export class DataQueryComponent implements OnInit {
             this.gridApi.setGridOption('rowData', result);
             this.scheduleColumnAutoSize();
           }
+          this.syncExportContext();
         });
       },
       error: err => {
@@ -202,6 +215,7 @@ export class DataQueryComponent implements OnInit {
             this.gridApi.setGridOption('rowData', filtered);
             this.scheduleColumnAutoSize();
           }
+          this.syncExportContext();
         });
       }
     });
@@ -310,12 +324,14 @@ export class DataQueryComponent implements OnInit {
 
   selectTab(index: number) {
     this.selectedTabIndex = index;
+    this.clearExportFeedback();
     const tab = this.queryTabs[index];
     if (this.gridApi && tab) {
       this.gridApi.setGridOption('columnDefs', tab.colDefs || this.colDefs);
       this.gridApi.setGridOption('rowData', tab.dataSource);
       this.scheduleColumnAutoSize();
     }
+    this.syncExportContext();
   }
 
   gridApi: any;
@@ -328,17 +344,31 @@ export class DataQueryComponent implements OnInit {
     }
 
     this.scheduleColumnAutoSize();
+    this.syncExportContext();
+  }
+
+  onSelectionChanged() {
+    this.clearExportFeedback();
+    this.syncExportContext();
+  }
+
+  onGridFilterChanged() {
+    this.syncExportContext();
   }
 
   applyTabFilter(event: Event, tabIndex: number) {
     const filterValue = (event.target as HTMLInputElement).value;
     if (this.gridApi) {
       this.gridApi.setGridOption('quickFilterText', filterValue);
+      setTimeout(() => {
+        this.syncExportContext();
+      });
     }
   }
 
   closeTab(index: number, event: Event) {
     event.stopPropagation();
+    this.clearExportFeedback();
     this.queryTabs.splice(index, 1);
 
     if (this.selectedTabIndex === index) {
@@ -347,34 +377,81 @@ export class DataQueryComponent implements OnInit {
     } else if (this.selectedTabIndex > index) {
       this.selectedTabIndex--;
     }
+
+    this.syncExportContext();
   }
 
   onReset() {
     // If you need specific reset behavior for forms, implement it here or via ViewChild queryBuilder
   }
 
+  onExportEmailInputChange() {
+    this.clearExportFeedback();
+  }
+
+  clearExportEmailInput() {
+    this.exportEmailInput = '';
+    this.clearExportFeedback();
+  }
+
+  get defaultRecipientEmail(): string {
+    return this.authService.currentUserValue?.email?.trim() ?? '';
+  }
+
   get exportEmailPlaceholder(): string {
-    return this.authService.currentUserValue?.email || '请输入邮箱，多个邮箱可用逗号分隔';
+    return this.defaultRecipientEmail
+      ? 'Add more recipient emails, or leave blank to use your account email'
+      : 'Add one or more recipient emails';
+  }
+
+  get exportEmailHint(): string {
+    return this.defaultRecipientEmail
+      ? 'Separate multiple addresses with commas, semicolons, or spaces. Leaving this blank uses your account email.'
+      : 'Separate multiple addresses with commas, semicolons, or spaces.';
+  }
+
+  get typedRecipientPreviewEmails(): string[] {
+    return this.parseRecipientEmails(this.exportEmailInput);
+  }
+
+  get invalidRecipientCount(): number {
+    if (!this.exportEmailInput.trim()) {
+      return 0;
+    }
+
+    return this.parseRecipientTokens(this.exportEmailInput).filter(
+      email => !DataQueryComponent.emailPattern.test(email)
+    ).length;
+  }
+
+  get isUsingDefaultRecipient(): boolean {
+    return !this.exportEmailInput.trim() && !!this.defaultRecipientEmail;
+  }
+
+  get exportSelectionSummary(): string {
+    if (this.visibleRowCount === 0) {
+      return 'No rows available in this result';
+    }
+
+    return `${this.selectedRowCount} selected of ${this.visibleRowCount} visible`;
   }
 
   exportSelectedRowsAndSendEmail() {
+    this.clearExportFeedback();
     if (this.isExporting || !this.gridApi || !this.queryTabs[this.selectedTabIndex]) {
       return;
     }
 
-    const selectedRows = this.gridApi
-      .getSelectedNodes()
-      .map((node: { data: any }) => node.data)
-      .filter((row: any) => !!row);
+    const selectedRows = this.getSelectedRows();
 
     if (selectedRows.length === 0) {
-      window.alert('请先选择要导出的结果行。');
+      this.setExportFeedback('error', 'Select at least one row from the current result before exporting.');
       return;
     }
 
-    const recipientEmails = this.parseRecipientEmails(this.exportEmailInput || this.exportEmailPlaceholder);
+    const recipientEmails = this.getEffectiveRecipientEmails();
     if (recipientEmails.length === 0) {
-      window.alert('请输入至少一个有效邮箱地址。');
+      this.setExportFeedback('error', 'Add at least one valid recipient email before sending the export.');
       return;
     }
 
@@ -398,11 +475,15 @@ export class DataQueryComponent implements OnInit {
         return firstValueFrom(this.http.post(`${this.config.apiEndpoint}/export/email`, payload));
       })
       .then(() => {
-        window.alert(`导出成功，邮件已发送至：${recipientEmails.join(', ')}`);
+        const recipientLabel = recipientEmails.length === 1 ? 'recipient' : 'recipients';
+        this.setExportFeedback(
+          'success',
+          `CSV downloaded and email queued for ${recipientEmails.length} ${recipientLabel}.`
+        );
       })
       .catch(error => {
         console.error('Failed to send export email', error);
-        window.alert('Excel 已下载，但发送邮件失败，请稍后重试。');
+        this.setExportFeedback('error', 'CSV downloaded successfully, but sending the email failed. Please try again.');
       })
       .finally(() => {
         this.isExporting = false;
@@ -423,6 +504,51 @@ export class DataQueryComponent implements OnInit {
         headerTooltip: columnDef.headerTooltip ?? columnDef.headerName ?? columnDef.field
       };
     });
+  }
+
+  private getSelectedRows(): any[] {
+    return this.gridApi
+      .getSelectedNodes()
+      .map((node: { data: any }) => node.data)
+      .filter((row: any) => !!row);
+  }
+
+  private getEffectiveRecipientEmails(): string[] {
+    if (this.exportEmailInput.trim()) {
+      return this.parseRecipientEmails(this.exportEmailInput);
+    }
+
+    return this.defaultRecipientEmail ? this.parseRecipientEmails(this.defaultRecipientEmail) : [];
+  }
+
+  private setExportFeedback(tone: ExportFeedback['tone'], message: string) {
+    this.exportFeedback = { tone, message };
+  }
+
+  private clearExportFeedback() {
+    this.exportFeedback = null;
+  }
+
+  private syncExportContext() {
+    const selectedNodes = this.gridApi?.getSelectedNodes?.() ?? [];
+    const displayedRowCount = this.gridApi?.getDisplayedRowCount?.();
+
+    this.selectedRowCount = selectedNodes.length;
+    this.visibleRowCount =
+      typeof displayedRowCount === 'number'
+        ? displayedRowCount
+        : (this.queryTabs[this.selectedTabIndex]?.dataSource.length ?? 0);
+  }
+
+  private parseRecipientTokens(rawEmails: string): string[] {
+    return Array.from(
+      new Set(
+        (rawEmails || '')
+          .split(/[,\s;]+/)
+          .map(email => email.trim())
+          .filter(email => email.length > 0)
+      )
+    );
   }
 
   private scheduleColumnAutoSize() {
@@ -479,15 +605,7 @@ export class DataQueryComponent implements OnInit {
   }
 
   private parseRecipientEmails(rawEmails: string): string[] {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return Array.from(
-      new Set(
-        (rawEmails || '')
-          .split(/[,\s;]+/)
-          .map(email => email.trim())
-          .filter(email => emailRegex.test(email))
-      )
-    );
+    return this.parseRecipientTokens(rawEmails).filter(email => DataQueryComponent.emailPattern.test(email));
   }
 
   private buildCsvContent(rows: any[], columns: ColDef[]): string {

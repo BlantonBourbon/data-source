@@ -1,5 +1,8 @@
 buildscript {
     repositories {
+        maven {
+            url = uri('https://maven.aliyun.com/repository/public')
+        }
         mavenCentral()
     }
     dependencies {
@@ -132,4 +135,3 @@ def writeFile(String packageName, String className, groovy.text.Template templat
 }
 
 compileJava.dependsOn generateScaffold
-

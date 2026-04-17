@@ -37,16 +37,106 @@
   <!-- Tab Content -->
   <div class="tab-content-container" *ngIf="queryTabs[selectedTabIndex]">
     <div class="tab-filter-bar">
-      <mat-icon class="filter-icon">filter_list</mat-icon>
-      <input type="text" placeholder="Filter this query result..." (keyup)="applyTabFilter($event, selectedTabIndex)" />
-      <mat-form-field class="export-email-field" appearance="outline">
-        <mat-label>发送邮箱</mat-label>
-        <input matInput [(ngModel)]="exportEmailInput" [placeholder]="exportEmailPlaceholder" />
-        <mat-hint>支持多个邮箱，使用逗号/分号/空格分隔</mat-hint>
-      </mat-form-field>
-      <button mat-raised-button color="primary" (click)="exportSelectedRowsAndSendEmail()" [disabled]="isExporting">
-        {{ isExporting ? '发送中...' : '导出Excel并发邮件' }}
-      </button>
+      <div class="table-tools-copy">
+        <div class="copy-icon">
+          <mat-icon class="filter-icon">filter_list</mat-icon>
+        </div>
+        <div>
+          <span class="section-kicker">Result tools</span>
+          <h3>Filter, review, and share this tab</h3>
+          <p>Quick-filter the grid, then send the selected rows as a CSV attachment by email.</p>
+        </div>
+      </div>
+
+      <div class="table-tools-grid">
+        <div class="quick-filter-shell">
+          <span class="field-label">Quick filter</span>
+          <div class="quick-filter-input">
+            <mat-icon>search</mat-icon>
+            <input
+              type="text"
+              placeholder="Filter visible rows..."
+              (keyup)="applyTabFilter($event, selectedTabIndex)"
+              aria-label="Filter rows in current result"
+            />
+          </div>
+        </div>
+
+        <div class="export-panel">
+          <div class="export-panel-header">
+            <div class="export-copy">
+              <span class="field-label">Export to email</span>
+              <p>A CSV copy downloads locally and the same file is sent to the recipients below.</p>
+            </div>
+            <div class="selection-badge" [class.empty]="selectedRowCount === 0">
+              <strong>{{ selectedRowCount }}</strong>
+              <span>{{ selectedRowCount === 1 ? 'row selected' : 'rows selected' }}</span>
+            </div>
+          </div>
+
+          <mat-form-field class="export-email-field" appearance="outline" subscriptSizing="dynamic">
+            <mat-label>Recipients</mat-label>
+            <mat-icon matPrefix>mail</mat-icon>
+            <input
+              matInput
+              [(ngModel)]="exportEmailInput"
+              [placeholder]="exportEmailPlaceholder"
+              (ngModelChange)="onExportEmailInputChange()"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button
+              *ngIf="exportEmailInput"
+              mat-icon-button
+              matSuffix
+              type="button"
+              aria-label="Clear recipient emails"
+              (click)="clearExportEmailInput()"
+            >
+              <mat-icon>close</mat-icon>
+            </button>
+            <mat-hint>{{ exportEmailHint }}</mat-hint>
+          </mat-form-field>
+
+          <div class="export-meta-row">
+            <span class="meta-pill">
+              <mat-icon>table_rows</mat-icon>
+              {{ exportSelectionSummary }}
+            </span>
+            <span class="meta-pill default" *ngIf="isUsingDefaultRecipient">
+              <mat-icon>person</mat-icon>
+              Default: {{ defaultRecipientEmail }}
+            </span>
+            <span class="meta-pill" *ngFor="let email of typedRecipientPreviewEmails">
+              <mat-icon>alternate_email</mat-icon>
+              {{ email }}
+            </span>
+            <span class="meta-pill warning" *ngIf="invalidRecipientCount > 0">
+              <mat-icon>error_outline</mat-icon>
+              {{ invalidRecipientCount }} invalid {{ invalidRecipientCount === 1 ? 'address' : 'addresses' }} ignored
+            </span>
+          </div>
+
+          <div class="export-actions">
+            <div class="export-feedback" *ngIf="exportFeedback" [class.error]="exportFeedback.tone === 'error'">
+              <mat-icon>{{ exportFeedback.tone === 'success' ? 'task_alt' : 'info' }}</mat-icon>
+              <span>{{ exportFeedback.message }}</span>
+            </div>
+
+            <button
+              mat-flat-button
+              color="primary"
+              class="export-action-btn"
+              type="button"
+              (click)="exportSelectedRowsAndSendEmail()"
+              [disabled]="isExporting"
+            >
+              <mat-icon>{{ isExporting ? 'hourglass_top' : 'forward_to_inbox' }}</mat-icon>
+              {{ isExporting ? 'Sending export...' : 'Download & send CSV' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="table-container">
@@ -76,6 +166,8 @@
         [defaultColDef]="defaultColDef"
         (gridReady)="onGridReady($event, selectedTabIndex)"
         (cellContextMenu)="onContextMenu($event)"
+        (selectionChanged)="onSelectionChanged()"
+        (filterChanged)="onGridFilterChanged()"
         [preventDefaultOnContextMenu]="true"
         rowSelection="multiple"
       >

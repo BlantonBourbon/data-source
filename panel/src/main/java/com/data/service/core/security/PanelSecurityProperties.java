@@ -15,6 +15,7 @@ public class PanelSecurityProperties {
     private String frontendBaseUrl;
     private final PingFederate pingFederate = new PingFederate();
     private final ClaimMapping claimMapping = new ClaimMapping();
+    private final LocalDev localDev = new LocalDev();
     private final List<ApplicationClient> applicationClients = new ArrayList<>();
 
     public boolean isH2ConsoleEnabled() {
@@ -39,6 +40,10 @@ public class PanelSecurityProperties {
 
     public ClaimMapping getClaimMapping() {
         return claimMapping;
+    }
+
+    public LocalDev getLocalDev() {
+        return localDev;
     }
 
     public List<ApplicationClient> getApplicationClients() {
@@ -179,6 +184,93 @@ public class PanelSecurityProperties {
 
         public Map<String, String> getClaims() {
             return claims;
+        }
+    }
+
+    public static class LocalDev {
+        private boolean authDisabled;
+        private String id = "local-dev-user";
+        private String username = "local-dev";
+        private String displayName = "Local Developer";
+        private String email = "local.dev@example.test";
+        private final List<String> groups = new ArrayList<>();
+        private final List<String> entitlements = new ArrayList<>();
+        private final List<String> permissions = new ArrayList<>();
+        private final Map<String, Object> dataScopes = new LinkedHashMap<>();
+        private final Map<String, Object> claims = new LinkedHashMap<>();
+
+        public boolean isAuthDisabled() {
+            return authDisabled;
+        }
+
+        public void setAuthDisabled(boolean authDisabled) {
+            this.authDisabled = authDisabled;
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public void setUsername(String username) {
+            this.username = username;
+        }
+
+        public String getDisplayName() {
+            return displayName;
+        }
+
+        public void setDisplayName(String displayName) {
+            this.displayName = displayName;
+        }
+
+        public String getEmail() {
+            return email;
+        }
+
+        public void setEmail(String email) {
+            this.email = email;
+        }
+
+        public List<String> getGroups() {
+            return groups;
+        }
+
+        public List<String> getEntitlements() {
+            return entitlements;
+        }
+
+        public List<String> getPermissions() {
+            return permissions;
+        }
+
+        public Map<String, Object> getDataScopes() {
+            return dataScopes;
+        }
+
+        public Map<String, Object> getClaims() {
+            return claims;
+        }
+
+        public BackendUserContext toBackendUserContext() {
+            return new BackendUserContext(
+                    id,
+                    username,
+                    displayName,
+                    email,
+                    List.copyOf(groups),
+                    List.copyOf(entitlements),
+                    List.copyOf(permissions),
+                    Map.copyOf(dataScopes),
+                    Map.copyOf(claims)
+            );
         }
     }
 }

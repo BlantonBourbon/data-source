@@ -9,13 +9,20 @@ import org.springframework.web.bind.annotation.RestController;
 public class CurrentUserController {
 
     private final BackendUserContextMapper userContextMapper;
+    private final PanelSecurityProperties securityProperties;
 
-    public CurrentUserController(BackendUserContextMapper userContextMapper) {
+    public CurrentUserController(BackendUserContextMapper userContextMapper,
+                                 PanelSecurityProperties securityProperties) {
         this.userContextMapper = userContextMapper;
+        this.securityProperties = securityProperties;
     }
 
     @GetMapping("/api/me")
     public BackendUserContext currentUser(@AuthenticationPrincipal OAuth2User user) {
+        if (user == null && securityProperties.getLocalDev().isAuthDisabled()) {
+            return securityProperties.getLocalDev().toBackendUserContext();
+        }
+
         return userContextMapper.toBackendUserContext(user);
     }
 }
