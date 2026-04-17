@@ -37,18 +37,34 @@
   <!-- Tab Content -->
   <div class="tab-content-container" *ngIf="queryTabs[selectedTabIndex]">
     <div class="tab-filter-bar">
-      <div class="table-tools-copy">
-        <div class="copy-icon">
-          <mat-icon class="filter-icon">filter_list</mat-icon>
+      <div class="table-tools-header">
+        <div class="table-tools-copy">
+          <div class="copy-icon">
+            <mat-icon class="filter-icon">filter_list</mat-icon>
+          </div>
+          <div>
+            <span class="section-kicker">Result tools</span>
+            <h3>Filter, review, and share this tab</h3>
+            <p>Quick-filter the grid, then download CSV/XLSX files and send the selected attachments by email.</p>
+          </div>
         </div>
-        <div>
-          <span class="section-kicker">Result tools</span>
-          <h3>Filter, review, and share this tab</h3>
-          <p>Quick-filter the grid, then send the selected rows as a CSV attachment by email.</p>
-        </div>
+
+        <button
+          mat-stroked-button
+          color="primary"
+          type="button"
+          class="table-tools-toggle"
+          [class.active-toggle]="isResultToolsOpen"
+          [attr.aria-expanded]="isResultToolsOpen"
+          aria-controls="result-tools-panel"
+          (click)="toggleResultTools()"
+        >
+          <mat-icon>{{ isResultToolsOpen ? 'expand_less' : 'tune' }}</mat-icon>
+          {{ isResultToolsOpen ? 'Hide tools' : 'Show tools' }}
+        </button>
       </div>
 
-      <div class="table-tools-grid">
+      <div class="table-tools-grid" *ngIf="isResultToolsOpen" id="result-tools-panel">
         <div class="quick-filter-shell">
           <span class="field-label">Quick filter</span>
           <div class="quick-filter-input">
@@ -66,12 +82,24 @@
           <div class="export-panel-header">
             <div class="export-copy">
               <span class="field-label">Export to email</span>
-              <p>A CSV copy downloads locally and the same file is sent to the recipients below.</p>
+              <p>
+                Choose CSV, XLSX, or both. Every selected file downloads locally and the same attachments are sent
+                below.
+              </p>
             </div>
             <div class="selection-badge" [class.empty]="selectedRowCount === 0">
               <strong>{{ selectedRowCount }}</strong>
               <span>{{ selectedRowCount === 1 ? 'row selected' : 'rows selected' }}</span>
             </div>
+          </div>
+
+          <div class="export-format-group">
+            <span class="field-label">File formats</span>
+            <div class="export-format-options">
+              <mat-checkbox [(ngModel)]="exportCsvSelected" (change)="onExportFormatChange()">CSV</mat-checkbox>
+              <mat-checkbox [(ngModel)]="exportXlsxSelected" (change)="onExportFormatChange()">XLSX</mat-checkbox>
+            </div>
+            <p>Select one or both formats for download and email delivery.</p>
           </div>
 
           <mat-form-field class="export-email-field" appearance="outline" subscriptSizing="dynamic">
@@ -99,6 +127,10 @@
           </mat-form-field>
 
           <div class="export-meta-row">
+            <span class="meta-pill" [class.warning]="selectedExportFormats.length === 0">
+              <mat-icon>description</mat-icon>
+              {{ exportFormatSummary }}
+            </span>
             <span class="meta-pill">
               <mat-icon>table_rows</mat-icon>
               {{ exportSelectionSummary }}
@@ -132,7 +164,7 @@
               [disabled]="isExporting"
             >
               <mat-icon>{{ isExporting ? 'hourglass_top' : 'forward_to_inbox' }}</mat-icon>
-              {{ isExporting ? 'Sending export...' : 'Download & send CSV' }}
+              {{ exportActionLabel }}
             </button>
           </div>
         </div>

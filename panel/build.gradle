@@ -1,5 +1,6 @@
 buildscript {
 	repositories {
+		mavenCentral()
 		maven {
 			url = uri('https://mirrors.cloud.tencent.com/nexus/repository/maven-public')
 			content {
@@ -7,10 +8,6 @@ buildscript {
 				includeGroup 'io.spring.gradle'
 			}
 		}
-		maven {
-			url = uri('https://maven.aliyun.com/repository/public')
-		}
-		mavenCentral()
 	}
 	dependencies {
 		classpath 'org.springframework.boot:spring-boot-gradle-plugin:3.4.1'
@@ -42,10 +39,10 @@ configurations {
 }
 
 repositories {
-	maven {
-		url = uri('https://maven.aliyun.com/repository/public')
-	}
 	mavenCentral()
+	maven {
+		url = uri('https://mirrors.cloud.tencent.com/nexus/repository/maven-public')
+	}
 }
 
 dependencies {

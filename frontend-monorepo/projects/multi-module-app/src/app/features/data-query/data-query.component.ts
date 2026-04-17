@@ -2,6 +2,7 @@ import { Component, OnInit, ViewChild, Inject, Input } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { ColDef, GridReadyEvent, CellContextMenuEvent, ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
 import { firstValueFrom } from 'rxjs';
+import * as XLSX from 'xlsx';
 
 // Register AG Grid Modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -21,6 +22,30 @@ export interface QueryTab {
 interface ExportFeedback {
   tone: 'success' | 'error';
   message: string;
+}
+
+type ExportFormat = 'csv' | 'xlsx';
+
+interface ExportAttachmentPayload {
+  format: ExportFormat;
+  fileName: string;
+  contentType: string;
+  fileBase64: string;
+}
+
+interface PreparedExportFile {
+  format: ExportFormat;
+  fileName: string;
+  contentType: string;
+  blob: Blob;
+}
+
+interface ExportEmailResponse {
+  status?: string;
+  deliveryMode?: 'log-only' | 'smtp';
+  recipientCount?: number;
+  attachmentCount?: number;
+  message?: string;
 }
 
 @Component({
@@ -69,6 +94,8 @@ export class DataQueryComponent implements OnInit {
   private static readonly estimatedHeaderPadding = 48;
   private static readonly maxEstimatedColumnWidth = 320;
   private static readonly emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  private static readonly csvContentType = 'text/csv;charset=utf-8;';
+  private static readonly xlsxContentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
   @Input() config!: DataQueryConfig;
 
@@ -88,6 +115,9 @@ export class DataQueryComponent implements OnInit {
   selectedTabIndex = 0;
   tabCounter = 1;
   exportEmailInput = '';
+  exportCsvSelected = true;
+  exportXlsxSelected = false;
+  isResultToolsOpen = true;
   isExporting = false;
   selectedRowCount = 0;
   visibleRowCount = 0;
@@ -381,6 +411,10 @@ export class DataQueryComponent implements OnInit {
     this.syncExportContext();
   }
 
+  toggleResultTools() {
+    this.isResultToolsOpen = !this.isResultToolsOpen;
+  }
+
   onReset() {
     // If you need specific reset behavior for forms, implement it here or via ViewChild queryBuilder
   }
@@ -391,6 +425,10 @@ export class DataQueryComponent implements OnInit {
 
   clearExportEmailInput() {
     this.exportEmailInput = '';
+    this.clearExportFeedback();
+  }
+
+  onExportFormatChange() {
     this.clearExportFeedback();
   }
 
@@ -408,6 +446,40 @@ export class DataQueryComponent implements OnInit {
     return this.defaultRecipientEmail
       ? 'Separate multiple addresses with commas, semicolons, or spaces. Leaving this blank uses your account email.'
       : 'Separate multiple addresses with commas, semicolons, or spaces.';
+  }
+
+  get selectedExportFormats(): ExportFormat[] {
+    const formats: ExportFormat[] = [];
+
+    if (this.exportCsvSelected) {
+      formats.push('csv');
+    }
+
+    if (this.exportXlsxSelected) {
+      formats.push('xlsx');
+    }
+
+    return formats;
+  }
+
+  get exportFormatSummary(): string {
+    if (this.selectedExportFormats.length === 0) {
+      return 'No file format selected';
+    }
+
+    return this.describeExportFormats(this.selectedExportFormats);
+  }
+
+  get exportActionLabel(): string {
+    if (this.isExporting) {
+      return 'Sending export...';
+    }
+
+    if (this.selectedExportFormats.length === 0) {
+      return 'Download & send export';
+    }
+
+    return `Download & send ${this.describeExportFormats(this.selectedExportFormats)}`;
   }
 
   get typedRecipientPreviewEmails(): string[] {
@@ -455,35 +527,57 @@ export class DataQueryComponent implements OnInit {
       return;
     }
 
+    const selectedFormats = this.selectedExportFormats;
+    if (selectedFormats.length === 0) {
+      this.setExportFeedback('error', 'Select at least one file format before downloading or emailing the export.');
+      return;
+    }
+
     const activeTab = this.queryTabs[this.selectedTabIndex];
     const activeColDefs = activeTab.colDefs || this.colDefs;
-    const fileName = `${this.sanitizeFileName(activeTab.title || 'query-result')}-${new Date().toISOString().slice(0, 10)}.csv`;
-    const csvContent = this.buildCsvContent(selectedRows, activeColDefs);
-    const csvBlob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const fileBaseName = `${this.sanitizeFileName(activeTab.title || 'query-result')}-${new Date().toISOString().slice(0, 10)}`;
+    const preparedFiles = this.prepareExportFiles(selectedRows, activeColDefs, fileBaseName, selectedFormats);
 
-    this.downloadBlob(csvBlob, fileName);
+    preparedFiles.forEach(file => this.downloadBlob(file.blob, file.fileName));
 
     this.isExporting = true;
-    this.blobToBase64(csvBlob)
-      .then(fileBase64 => {
+    Promise.all(
+      preparedFiles.map(file =>
+        this.blobToBase64(file.blob).then(
+          (fileBase64): ExportAttachmentPayload => ({
+            format: file.format,
+            fileName: file.fileName,
+            contentType: file.contentType,
+            fileBase64
+          })
+        )
+      )
+    )
+      .then(attachments => {
         const payload = {
           recipients: recipientEmails,
-          fileName,
-          fileBase64,
-          rowCount: selectedRows.length
+          attachments,
+          rowCount: selectedRows.length,
+          exportTitle: activeTab.title || 'query-result'
         };
-        return firstValueFrom(this.http.post(`${this.config.apiEndpoint}/export/email`, payload));
+        return firstValueFrom(this.http.post<ExportEmailResponse>(`${this.config.apiEndpoint}/export/email`, payload));
       })
-      .then(() => {
+      .then(response => {
         const recipientLabel = recipientEmails.length === 1 ? 'recipient' : 'recipients';
+        const downloadedFormats = this.describeExportFormats(selectedFormats);
+        const deliveryMessage =
+          response?.deliveryMode === 'log-only' ? ' Email delivery is running in local log-only mode.' : '';
         this.setExportFeedback(
           'success',
-          `CSV downloaded and email queued for ${recipientEmails.length} ${recipientLabel}.`
+          `${downloadedFormats} downloaded and export email accepted for ${recipientEmails.length} ${recipientLabel}.${deliveryMessage}`
         );
       })
       .catch(error => {
         console.error('Failed to send export email', error);
-        this.setExportFeedback('error', 'CSV downloaded successfully, but sending the email failed. Please try again.');
+        this.setExportFeedback(
+          'error',
+          'Selected files downloaded successfully, but sending the email request failed. Please try again.'
+        );
       })
       .finally(() => {
         this.isExporting = false;
@@ -608,11 +702,72 @@ export class DataQueryComponent implements OnInit {
     return this.parseRecipientTokens(rawEmails).filter(email => DataQueryComponent.emailPattern.test(email));
   }
 
+  private prepareExportFiles(
+    rows: any[],
+    columns: ColDef[],
+    fileBaseName: string,
+    formats: ExportFormat[]
+  ): PreparedExportFile[] {
+    return formats.map(format => {
+      if (format === 'xlsx') {
+        return this.buildXlsxFile(rows, columns, fileBaseName);
+      }
+
+      return this.buildCsvFile(rows, columns, fileBaseName);
+    });
+  }
+
+  private buildCsvFile(rows: any[], columns: ColDef[], fileBaseName: string): PreparedExportFile {
+    const csvContent = this.buildCsvContent(rows, columns);
+
+    return {
+      format: 'csv',
+      fileName: `${fileBaseName}.csv`,
+      contentType: DataQueryComponent.csvContentType,
+      blob: new Blob(['\ufeff' + csvContent], { type: DataQueryComponent.csvContentType })
+    };
+  }
+
+  private buildXlsxFile(rows: any[], columns: ColDef[], fileBaseName: string): PreparedExportFile {
+    const worksheet = XLSX.utils.aoa_to_sheet(this.buildWorksheetRows(rows, columns));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Export');
+    const workbookBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+
+    return {
+      format: 'xlsx',
+      fileName: `${fileBaseName}.xlsx`,
+      contentType: DataQueryComponent.xlsxContentType,
+      blob: new Blob([workbookBuffer], { type: DataQueryComponent.xlsxContentType })
+    };
+  }
+
+  private buildWorksheetRows(rows: any[], columns: ColDef[]): unknown[][] {
+    const fields = columns.map(column => column.field).filter((field): field is string => !!field);
+
+    return [
+      fields.map(field => this.resolveHeaderLabel(field, columns)),
+      ...rows.map(row => fields.map(field => this.normalizeWorksheetCellValue(row[field])))
+    ];
+  }
+
   private buildCsvContent(rows: any[], columns: ColDef[]): string {
     const fields = columns.map(column => column.field).filter((field): field is string => !!field);
     const header = fields.map(field => this.escapeCsvValue(this.resolveHeaderLabel(field, columns))).join(',');
     const body = rows.map(row => fields.map(field => this.escapeCsvValue(row[field])).join(',')).join('\n');
     return `${header}\n${body}`;
+  }
+
+  private normalizeWorksheetCellValue(value: unknown): string | number | boolean {
+    if (value === null || value === undefined) {
+      return '';
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return value;
+    }
+
+    return String(value);
   }
 
   private resolveHeaderLabel(field: string, columns: ColDef[]): string {
@@ -630,6 +785,20 @@ export class DataQueryComponent implements OnInit {
 
   private sanitizeFileName(fileName: string): string {
     return fileName.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, '_');
+  }
+
+  private describeExportFormats(formats: ExportFormat[]): string {
+    const labels = formats.map(format => format.toUpperCase());
+
+    if (labels.length <= 1) {
+      return labels[0] ?? 'Export';
+    }
+
+    if (labels.length === 2) {
+      return `${labels[0]} and ${labels[1]}`;
+    }
+
+    return `${labels.slice(0, -1).join(', ')}, and ${labels.at(-1)}`;
   }
 
   private downloadBlob(blob: Blob, fileName: string) {

@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.web.ServerProperties;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -20,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.oauth2Login;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
@@ -94,6 +96,14 @@ class SecurityIntegrationTest {
     }
 
     @Test
+    void unauthenticatedExportEmailRequestReturns401InsteadOfLoginRedirect() throws Exception {
+        mockMvc.perform(post("/api/user/trades/export/email")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validExportEmailPayload()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void authenticatedUserCanLoadNormalizedCurrentUserContext() throws Exception {
         mockMvc.perform(get("/api/me").with(oauth2Login().attributes(attributes -> {
                     attributes.put("sub", "user-123");
@@ -113,6 +123,18 @@ class SecurityIntegrationTest {
                 .andExpect(jsonPath("$.entitlements[0]").value("dashboard:view"))
                 .andExpect(jsonPath("$.permissions[0]").value("module:data-explorer"))
                 .andExpect(jsonPath("$.dataScopes.accountIds[0]").value("A1"));
+    }
+
+    @Test
+    void authenticatedUserCanSubmitExportEmailRequest() throws Exception {
+        mockMvc.perform(post("/api/user/trades/export/email")
+                        .with(oauth2Login())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validExportEmailPayload()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("accepted"))
+                .andExpect(jsonPath("$.deliveryMode").value("log-only"))
+                .andExpect(jsonPath("$.attachmentCount").value(1));
     }
 
     @Test
@@ -165,5 +187,23 @@ class SecurityIntegrationTest {
         Mockito.when(certificate.getSubjectX500Principal()).thenReturn(principal);
         Mockito.when(certificate.getSubjectDN()).thenReturn((Principal) principal);
         return certificate;
+    }
+
+    private String validExportEmailPayload() {
+        return """
+                {
+                  "recipients": ["alice@example.com"],
+                  "attachments": [
+                    {
+                      "format": "csv",
+                      "fileName": "trades-export.csv",
+                      "contentType": "text/csv;charset=utf-8;",
+                      "fileBase64": "aWQsdHJhZGVUeXBlCjEsU3BvdAo="
+                    }
+                  ],
+                  "rowCount": 1,
+                  "exportTitle": "Trades export"
+                }
+                """;
     }
 }

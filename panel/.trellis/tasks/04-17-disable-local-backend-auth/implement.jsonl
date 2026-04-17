@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "./.trellis/spec/backend/index.md", "reason": "Backend guideline index for local auth changes"}
+{"file": "src/main/java/com/data/service/core/security/SecurityConfiguration.java", "reason": "Existing security filter chains and local auth integration point"}
+{"file": "src/main/java/com/data/service/core/security/CurrentUserController.java", "reason": "Current user endpoint used by the frontend guard"}
+{"file": "src/main/resources/application-local.properties", "reason": "Local profile property source for auth disablement"}

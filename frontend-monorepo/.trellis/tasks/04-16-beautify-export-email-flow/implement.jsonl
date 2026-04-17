@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "projects/multi-module-app/src/app/core/home/home.component.scss", "reason": "Recent frontend visual language and pill/button styling cues"}
+{"file": "projects/multi-module-app/src/app/features/data-query/data-query.component.ts", "reason": "Existing export-to-email behavior and component state"}
+{"file": "./.trellis/spec/frontend/index.md", "reason": "Frontend guideline index for this task"}
+{"file": "projects/multi-module-app/src/app/features/data-query/data-query.component.html", "reason": "Template for export toolbar layout and feedback UI"}
+{"file": "projects/multi-module-app/src/app/features/data-query/data-query.component.scss", "reason": "Styling surface for export toolbar beautification"}

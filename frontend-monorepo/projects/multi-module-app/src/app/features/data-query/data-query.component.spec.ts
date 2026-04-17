@@ -51,6 +51,37 @@ describe('DataQueryComponent', () => {
     });
   });
 
+  it('opens result tools by default and toggles them closed and open again', () => {
+    expect(component.isResultToolsOpen).toBeTrue();
+
+    component.toggleResultTools();
+    expect(component.isResultToolsOpen).toBeFalse();
+
+    component.toggleResultTools();
+    expect(component.isResultToolsOpen).toBeTrue();
+  });
+
+  it('shows inline feedback when no export format is selected', () => {
+    component.gridApi.getSelectedNodes.and.returnValue([
+      {
+        data: {
+          id: 1,
+          tradeType: 'Spot'
+        }
+      }
+    ]);
+    component.exportCsvSelected = false;
+    component.exportXlsxSelected = false;
+
+    component.exportSelectedRowsAndSendEmail();
+
+    expect(http.post).not.toHaveBeenCalled();
+    expect(component.exportFeedback).toEqual({
+      tone: 'error',
+      message: 'Select at least one file format before downloading or emailing the export.'
+    });
+  });
+
   it('uses the current user email when the recipient field is blank', async () => {
     component.gridApi.getSelectedNodes.and.returnValue([
       {
@@ -63,7 +94,7 @@ describe('DataQueryComponent', () => {
 
     spyOn<any>(component, 'downloadBlob');
     spyOn<any>(component, 'blobToBase64').and.resolveTo('encoded-file');
-    http.post.and.returnValue(of({}));
+    http.post.and.returnValue(of({ deliveryMode: 'log-only' }));
 
     component.exportSelectedRowsAndSendEmail();
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -72,13 +103,54 @@ describe('DataQueryComponent', () => {
       `${component.config.apiEndpoint}/export/email`,
       jasmine.objectContaining({
         recipients: ['alice@example.com'],
-        fileBase64: 'encoded-file',
+        attachments: [
+          jasmine.objectContaining({
+            format: 'csv',
+            fileBase64: 'encoded-file'
+          })
+        ],
         rowCount: 1
       })
     );
     expect(component.exportFeedback).toEqual({
       tone: 'success',
-      message: 'CSV downloaded and email queued for 1 recipient.'
+      message:
+        'CSV downloaded and export email accepted for 1 recipient. Email delivery is running in local log-only mode.'
+    });
+  });
+
+  it('downloads and sends both csv and xlsx attachments when both formats are selected', async () => {
+    component.gridApi.getSelectedNodes.and.returnValue([
+      {
+        data: {
+          id: 1,
+          tradeType: 'Spot'
+        }
+      }
+    ]);
+    component.exportXlsxSelected = true;
+
+    const downloadBlobSpy = spyOn<any>(component, 'downloadBlob');
+    spyOn<any>(component, 'blobToBase64').and.resolveTo('encoded-file');
+    http.post.and.returnValue(of({ status: 'accepted', deliveryMode: 'log-only' }));
+
+    component.exportSelectedRowsAndSendEmail();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(downloadBlobSpy).toHaveBeenCalledTimes(2);
+    expect(http.post).toHaveBeenCalledWith(
+      `${component.config.apiEndpoint}/export/email`,
+      jasmine.objectContaining({
+        attachments: [
+          jasmine.objectContaining({ format: 'csv', fileName: jasmine.stringMatching(/\.csv$/) }),
+          jasmine.objectContaining({ format: 'xlsx', fileName: jasmine.stringMatching(/\.xlsx$/) })
+        ]
+      })
+    );
+    expect(component.exportFeedback).toEqual({
+      tone: 'success',
+      message:
+        'CSV and XLSX downloaded and export email accepted for 1 recipient. Email delivery is running in local log-only mode.'
     });
   });
 });

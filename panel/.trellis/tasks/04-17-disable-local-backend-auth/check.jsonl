@@ -1,0 +1,3 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check-backend.md", "reason": "Backend check spec"}
+{"file": "src/test/java/com/data/service/core/security/LocalProfileStartupTest.java", "reason": "Verify local profile behavior"}

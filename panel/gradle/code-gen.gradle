@@ -1,9 +1,9 @@
 buildscript {
     repositories {
-        maven {
-            url = uri('https://maven.aliyun.com/repository/public')
-        }
         mavenCentral()
+        maven {
+            url = uri('https://mirrors.cloud.tencent.com/nexus/repository/maven-public')
+        }
     }
     dependencies {
         classpath 'org.yaml:snakeyaml:2.0'

@@ -222,6 +222,13 @@ p {
     background: linear-gradient(135deg, #f6fbff 0%, #ffffff 58%, #f4f7fb 100%);
     border-bottom: 1px solid #e0e0e0;
 
+    .table-tools-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
     .table-tools-copy {
       display: flex;
       align-items: flex-start;
@@ -272,11 +279,23 @@ p {
       }
     }
 
+    .table-tools-toggle {
+      min-height: 42px;
+      padding: 0 18px;
+      border-radius: 999px;
+      flex-shrink: 0;
+
+      &.active-toggle {
+        background-color: rgba(11, 115, 194, 0.08);
+      }
+    }
+
     .table-tools-grid {
       display: grid;
       grid-template-columns: minmax(260px, 0.95fr) minmax(320px, 1.35fr);
       gap: 16px;
       align-items: stretch;
+      animation: resultToolsReveal 0.24s ease-out forwards;
     }
 
     .field-label {
@@ -407,6 +426,32 @@ p {
       width: 100%;
     }
 
+    .export-format-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+
+      p {
+        margin: 0;
+        color: #617487;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+    }
+
+    .export-format-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+
+      ::ng-deep .mdc-form-field {
+        padding: 10px 14px;
+        border: 1px solid #d9e5f1;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.9);
+      }
+    }
+
     .export-meta-row {
       display: flex;
       flex-wrap: wrap;
@@ -481,6 +526,18 @@ p {
       letter-spacing: 0.01em;
       box-shadow: 0 12px 24px rgba(11, 115, 194, 0.18);
     }
+  }
+}
+
+@keyframes resultToolsReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -616,6 +673,10 @@ p {
   .tab-content-container {
     .tab-filter-bar {
       padding: 16px;
+
+      .table-tools-header {
+        flex-direction: column;
+      }
 
       .table-tools-copy {
         h3 {
