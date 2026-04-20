@@ -12,6 +12,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -50,10 +51,7 @@ class LocalProfileStartupTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validExportEmailPayload()))
                 .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.status").value("accepted"))
-                .andExpect(jsonPath("$.deliveryMode").value("log-only"))
-                .andExpect(jsonPath("$.recipientCount").value(1))
-                .andExpect(jsonPath("$.attachmentCount").value(1));
+                .andExpect(content().string(""));
     }
 
     @Test
@@ -67,7 +65,6 @@ class LocalProfileStartupTest {
         return """
                 {
                   "to": ["alice@example.com"],
-                  "from": "sender@example.com",
                   "cc": [],
                   "attachments": [
                     {

@@ -1,7 +1,6 @@
 package com.data.service.core.controller;
 
 import com.data.service.core.export.ExportEmailRequest;
-import com.data.service.core.export.ExportEmailResponse;
 import com.data.service.core.export.ExportEmailService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.ResponseEntity;
@@ -25,9 +24,10 @@ public class UserEntityController extends GenericEntityController {
     }
 
     @PostMapping("/export/email")
-    public ResponseEntity<ExportEmailResponse> sendExportEmail(@PathVariable String entity,
-                                                               @RequestBody ExportEmailRequest request) {
+    public ResponseEntity<Void> sendExportEmail(@PathVariable String entity,
+                                                @RequestBody ExportEmailRequest request) {
         getServiceOrThrow(entity);
-        return ResponseEntity.accepted().body(exportEmailService.accept(entity, request));
+        exportEmailService.send(entity, request);
+        return ResponseEntity.accepted().build();
     }
 }

@@ -22,6 +22,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.oauth2Login;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
@@ -132,9 +133,7 @@ class SecurityIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validExportEmailPayload()))
                 .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.status").value("accepted"))
-                .andExpect(jsonPath("$.deliveryMode").value("log-only"))
-                .andExpect(jsonPath("$.attachmentCount").value(1));
+                .andExpect(content().string(""));
     }
 
     @Test
@@ -193,7 +192,6 @@ class SecurityIntegrationTest {
         return """
                 {
                   "to": ["alice@example.com"],
-                  "from": "sender@example.com",
                   "cc": [],
                   "attachments": [
                     {

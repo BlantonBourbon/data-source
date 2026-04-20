@@ -6,12 +6,21 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 @Service
@@ -27,36 +36,28 @@ public class ExportEmailService {
     private static final int MAX_ATTACHMENTS = 2;
     private static final int MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
-    public ExportEmailResponse accept(String entity, ExportEmailRequest request) {
+    public void send(String entity, ExportEmailRequest request) {
         if (request == null) {
             throw badRequest("Export email request body is required.");
         }
 
         List<String> to = normalizeRequiredEmails(request.getTo(), "to");
-        String from = normalizeSender(request.getFrom());
         List<String> cc = normalizeOptionalEmails(request.getCc(), "cc");
-        List<NormalizedAttachment> attachments = normalizeAttachments(request.getAttachments());
         validateRecipientLimit(to.size() + cc.size());
+        PreparedAttachments attachments = normalizeAttachments(request.getAttachments());
 
         log.info(
-                "Accepted export email request: entity={}, from={}, toCount={}, ccCount={}, recipientCount={}, attachmentCount={}, attachmentNames={}, totalAttachmentBytes={}, deliveryMode=log-only",
+                "Accepted export email request: entity={}, toCount={}, ccCount={}, recipientCount={}, attachmentCount={}, attachmentNames={}, totalAttachmentBytes={}",
                 entity,
-                from,
                 to.size(),
                 cc.size(),
                 to.size() + cc.size(),
-                attachments.size(),
-                attachments.stream().map(NormalizedAttachment::fileName).toList(),
-                attachments.stream().mapToInt(NormalizedAttachment::sizeBytes).sum()
+                attachments.files().size(),
+                attachments.files().stream().map(File::getName).toList(),
+                attachments.totalBytes()
         );
 
-        return new ExportEmailResponse(
-                "accepted",
-                "log-only",
-                to.size() + cc.size(),
-                attachments.size(),
-                "Export email request accepted in log-only mode."
-        );
+        sendExportEmail(to, cc, attachments.files());
     }
 
     private List<String> normalizeRequiredEmails(List<String> rawEmails, String fieldName) {
@@ -89,26 +90,13 @@ public class ExportEmailService {
         return List.copyOf(uniqueRecipients);
     }
 
-    private String normalizeSender(String rawFrom) {
-        String from = rawFrom == null ? "" : rawFrom.trim().toLowerCase(Locale.ROOT);
-        if (from.isEmpty()) {
-            throw badRequest("A valid from email address is required.");
-        }
-
-        if (!EMAIL_PATTERN.matcher(from).matches()) {
-            throw badRequest("The from email address must be valid.");
-        }
-
-        return from;
-    }
-
     private void validateRecipientLimit(int recipientCount) {
         if (recipientCount > MAX_RECIPIENTS) {
             throw badRequest("Export emails support up to " + MAX_RECIPIENTS + " total to/cc recipients per request.");
         }
     }
 
-    private List<NormalizedAttachment> normalizeAttachments(List<ExportEmailAttachmentRequest> rawAttachments) {
+    private PreparedAttachments normalizeAttachments(List<ExportEmailAttachmentRequest> rawAttachments) {
         if (rawAttachments == null || rawAttachments.isEmpty()) {
             throw badRequest("At least one export attachment is required.");
         }
@@ -117,20 +105,36 @@ public class ExportEmailService {
             throw badRequest("Export emails support up to " + MAX_ATTACHMENTS + " attachments per request.");
         }
 
-        List<NormalizedAttachment> normalizedAttachments = new ArrayList<>();
-        for (ExportEmailAttachmentRequest rawAttachment : rawAttachments) {
-            if (rawAttachment == null) {
-                throw badRequest("Export attachments cannot be empty.");
+        Path tempDirectory = createTemporaryAttachmentDirectory();
+        List<File> files = new ArrayList<>();
+        Set<String> fileNames = new HashSet<>();
+        int totalBytes = 0;
+        try {
+            for (ExportEmailAttachmentRequest rawAttachment : rawAttachments) {
+                if (rawAttachment == null) {
+                    throw badRequest("Export attachments cannot be empty.");
+                }
+
+                String fileName = normalizeFileName(rawAttachment.getFileName());
+                if (!fileNames.add(fileName.toLowerCase(Locale.ROOT))) {
+                    throw badRequest("Attachment file names must be unique.");
+                }
+
+                normalizeContentType(rawAttachment.getContentType(), fileName);
+                byte[] bytes = normalizeAttachmentBytes(rawAttachment.getFileBase64());
+                Path attachmentPath = writeAttachmentFile(tempDirectory, fileName, bytes);
+                File attachmentFile = attachmentPath.toFile();
+                attachmentFile.deleteOnExit();
+
+                files.add(attachmentFile);
+                totalBytes += bytes.length;
             }
 
-            String fileName = normalizeFileName(rawAttachment.getFileName());
-            String contentType = normalizeContentType(rawAttachment.getContentType(), fileName);
-            int sizeBytes = normalizeAttachmentBytes(rawAttachment.getFileBase64());
-
-            normalizedAttachments.add(new NormalizedAttachment(fileName, sizeBytes));
+            return new PreparedAttachments(List.copyOf(files), tempDirectory, totalBytes);
+        } catch (RuntimeException exception) {
+            deleteTemporaryAttachments(new PreparedAttachments(List.copyOf(files), tempDirectory, totalBytes));
+            throw exception;
         }
-
-        return List.copyOf(normalizedAttachments);
     }
 
     private String normalizeFileName(String rawFileName) {
@@ -143,17 +147,28 @@ public class ExportEmailService {
             throw badRequest("Attachment file names must end with .csv or .xlsx.");
         }
 
+        if (!isFileNameOnly(fileName)) {
+            throw badRequest("Attachment file names cannot include path segments.");
+        }
+
         return fileName;
     }
 
-    private String normalizeContentType(String rawContentType, String fileName) {
+    private boolean isFileNameOnly(String fileName) {
+        try {
+            return Path.of(fileName).getFileName().toString().equals(fileName);
+        } catch (InvalidPathException exception) {
+            return false;
+        }
+    }
+
+    private void normalizeContentType(String rawContentType, String fileName) {
         String contentType = rawContentType == null ? "" : rawContentType.trim().toLowerCase(Locale.ROOT);
         String attachmentExtension = resolveAttachmentExtension(fileName);
         List<String> supportedTypes = attachmentExtension == null ? null : SUPPORTED_CONTENT_TYPES.get(attachmentExtension);
         if (supportedTypes == null || !supportedTypes.contains(contentType)) {
             throw badRequest("Attachment content type does not match the selected export format.");
         }
-        return contentType;
     }
 
     private String resolveAttachmentExtension(String fileName) {
@@ -167,7 +182,7 @@ public class ExportEmailService {
         return null;
     }
 
-    private int normalizeAttachmentBytes(String rawBase64) {
+    private byte[] normalizeAttachmentBytes(String rawBase64) {
         String fileBase64 = rawBase64 == null ? "" : rawBase64.trim();
         if (fileBase64.isEmpty()) {
             throw badRequest("Each export attachment must include a base64 payload.");
@@ -188,16 +203,67 @@ public class ExportEmailService {
             throw badRequest("Each export attachment must be 5 MB or smaller.");
         }
 
-        return decodedBytes.length;
+        return decodedBytes;
+    }
+
+    private Path createTemporaryAttachmentDirectory() {
+        try {
+            Path tempDirectory = Files.createTempDirectory("export-email-attachments-");
+            tempDirectory.toFile().deleteOnExit();
+            return tempDirectory;
+        } catch (IOException exception) {
+            throw serverError("Failed to prepare export attachments.", exception);
+        }
+    }
+
+    private Path writeAttachmentFile(Path tempDirectory, String fileName, byte[] bytes) {
+        Path attachmentPath = tempDirectory.resolve(fileName).normalize();
+        if (!attachmentPath.startsWith(tempDirectory)) {
+            throw badRequest("Attachment file names cannot include path segments.");
+        }
+
+        try {
+            return Files.write(attachmentPath, bytes, StandardOpenOption.CREATE_NEW);
+        } catch (FileAlreadyExistsException exception) {
+            throw badRequest("Attachment file names must be unique.");
+        } catch (IOException exception) {
+            throw serverError("Failed to prepare export attachment.", exception);
+        }
+    }
+
+    private void sendExportEmail(List<String> to, List<String> cc, List<File> attachments) {
+        // Hook the internal mail handler here. It should receive only to/cc and List<File> attachments.
+        // These files stay available after this method returns, so async handlers can read them later.
     }
 
     private ResponseStatusException badRequest(String message) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
     }
 
-    private record NormalizedAttachment(
-            String fileName,
-            int sizeBytes
+    private ResponseStatusException serverError(String message, Throwable cause) {
+        return new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, message, cause);
+    }
+
+    private void deleteTemporaryAttachments(PreparedAttachments attachments) {
+        for (File file : attachments.files()) {
+            try {
+                Files.deleteIfExists(file.toPath());
+            } catch (IOException exception) {
+                log.warn("Failed to delete temporary export attachment: fileName={}", file.getName(), exception);
+            }
+        }
+
+        try {
+            Files.deleteIfExists(attachments.directory());
+        } catch (IOException exception) {
+            log.warn("Failed to delete temporary export attachment directory: directory={}", attachments.directory(), exception);
+        }
+    }
+
+    private record PreparedAttachments(
+            List<File> files,
+            Path directory,
+            int totalBytes
     ) {
     }
 }

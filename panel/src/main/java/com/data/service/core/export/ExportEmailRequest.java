@@ -8,7 +8,6 @@ import java.util.List;
 @Data
 public class ExportEmailRequest {
     private List<String> to = new ArrayList<>();
-    private String from;
     private List<String> cc = new ArrayList<>();
     private List<ExportEmailAttachmentRequest> attachments = new ArrayList<>();
 }
