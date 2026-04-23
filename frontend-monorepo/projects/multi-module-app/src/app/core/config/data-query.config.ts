@@ -4,6 +4,10 @@ export type FilterFieldType = 'string' | 'number' | 'date' | 'time' | 'checkbox'
 
 import { ModuleDefinition } from '../models/auth.models';
 
+export interface MockQueryRow {
+  [key: string]: string | number | boolean | null;
+}
+
 export interface FilterField {
   name: string;
   label: string;
@@ -13,6 +17,7 @@ export interface FilterField {
   group?: string;
   gridSpan?: 3 | 4 | 6 | 12;
   placeholder?: string;
+  mockOptions?: string[];
 }
 
 export interface DataQueryConfig extends ModuleDefinition {
@@ -22,6 +27,7 @@ export interface DataQueryConfig extends ModuleDefinition {
   filterFields: FilterField[];
   numericColumns: string[];
   groupByFields: string[];
+  mockData?: MockQueryRow[];
 }
 
 const entityApiBasePath = '/api/user';
@@ -40,13 +46,59 @@ export const BuiltinModules: Record<string, DataQueryConfig> = {
     apiEndpoint: `${entityApiBasePath}/trades`,
     metricEndpoint: `${entityApiBasePath}/trades/metric`,
     filterFields: [
-      { name: 'tradeType', label: 'Trade Type', type: 'string', group: 'Basic' },
-      { name: 'currency', label: 'Currency', type: 'string', group: 'Basic' },
+      {
+        name: 'tradeType',
+        label: 'Trade Type',
+        type: 'dropdown',
+        group: 'Basic',
+        mockOptions: ['SPOT', 'FORWARD', 'SWAP']
+      },
+      {
+        name: 'currency',
+        label: 'Currency',
+        type: 'dropdown',
+        group: 'Basic',
+        mockOptions: ['USD', 'EUR', 'JPY']
+      },
       { name: 'tradeDate', label: 'Trade Date', type: 'date', group: 'Time' },
       { name: 'counterparty', label: 'Counterparty', type: 'string', group: 'Counterparty' }
     ],
     numericColumns: ['amount', 'id'],
     groupByFields: ['tradeType', 'currency', 'counterparty'],
+    mockData: [
+      {
+        id: 1,
+        tradeType: 'SPOT',
+        tradeDate: '2026-01-15',
+        amount: 125000,
+        currency: 'USD',
+        counterparty: 'Alpha Capital'
+      },
+      {
+        id: 2,
+        tradeType: 'FORWARD',
+        tradeDate: '2026-02-03',
+        amount: 98000,
+        currency: 'EUR',
+        counterparty: 'Northwind Markets'
+      },
+      {
+        id: 3,
+        tradeType: 'SWAP',
+        tradeDate: '2026-02-18',
+        amount: 210500,
+        currency: 'JPY',
+        counterparty: 'Blue Ocean Fund'
+      },
+      {
+        id: 4,
+        tradeType: 'SPOT',
+        tradeDate: '2026-03-01',
+        amount: 75000,
+        currency: 'USD',
+        counterparty: 'Northwind Markets'
+      }
+    ],
     colDefs: [
       {
         field: 'id',
@@ -80,11 +132,37 @@ export const BuiltinModules: Record<string, DataQueryConfig> = {
     apiEndpoint: `${entityApiBasePath}/cryptoassets`,
     metricEndpoint: `${entityApiBasePath}/cryptoassets/metric`,
     filterFields: [
-      { name: 'symbol', label: 'Symbol', type: 'string', group: 'Basic' },
+      {
+        name: 'symbol',
+        label: 'Symbol',
+        type: 'dropdown',
+        group: 'Basic',
+        mockOptions: ['BTC', 'ETH', 'SOL']
+      },
       { name: 'listingDate', label: 'Listing Date', type: 'date', group: 'Time' }
     ],
     numericColumns: ['marketCap', 'id'],
     groupByFields: ['symbol'],
+    mockData: [
+      {
+        id: 1,
+        symbol: 'BTC',
+        marketCap: 1350000000000,
+        listingDate: '2009-01-03'
+      },
+      {
+        id: 2,
+        symbol: 'ETH',
+        marketCap: 420000000000,
+        listingDate: '2015-07-30'
+      },
+      {
+        id: 3,
+        symbol: 'SOL',
+        marketCap: 68000000000,
+        listingDate: '2020-03-16'
+      }
+    ],
     colDefs: [
       {
         field: 'id',

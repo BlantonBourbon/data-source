@@ -8,7 +8,7 @@
   <div class="filter-card">
     <app-query-builder
       *ngIf="config && config.filterFields"
-      [availableFields]="config.filterFields"
+      [availableFields]="availableFilterFields"
       (querySubmit)="onQuerySubmit($event)"
     >
     </app-query-builder>

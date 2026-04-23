@@ -17,7 +17,7 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 import { MatMenuTrigger } from '@angular/material/menu';
 import { MatDialog, MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 
-import { DataQueryConfig } from '../../core/config/data-query.config';
+import { DataQueryConfig, FilterField } from '../../core/config/data-query.config';
 import { AuthService } from '../../core/services/auth.service';
 import { QueryCondition } from '../../shared/components/query-builder/query-builder.component';
 
@@ -115,11 +115,16 @@ export class DataQueryComponent implements OnInit {
   private static readonly emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   private static readonly csvContentType = 'text/csv;charset=utf-8;';
   private static readonly xlsxContentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  private static readonly dropdownOptionSortOptions = {
+    numeric: true,
+    sensitivity: 'base'
+  } as const;
 
   @Input() config!: DataQueryConfig;
 
   displayedColumns: string[] = [];
   colDefs: ColDef[] = [];
+  availableFilterFields: FilterField[] = [];
   defaultColDef: ColDef = {
     minWidth: DataQueryComponent.minColumnWidth,
     sortable: true,
@@ -144,6 +149,7 @@ export class DataQueryComponent implements OnInit {
     sortable: false
   };
   allData: any[] = [];
+  dropdownOptions: Record<string, string[]> = {};
   queryTabs: QueryTab[] = [];
   selectedTabIndex = 0;
   tabCounter = 1;
@@ -174,6 +180,7 @@ export class DataQueryComponent implements OnInit {
 
     this.colDefs = this.withReadableHeaders(this.config.colDefs);
     this.displayedColumns = this.config.colDefs.map(c => c.field).filter(f => !!f) as string[];
+    this.updateAvailableFilterFields(this.config.mockData ?? []);
 
     // Create an initial loading tab
     this.queryTabs.push({
@@ -185,7 +192,8 @@ export class DataQueryComponent implements OnInit {
     // Fetch initial data from backend API
     this.http.get<any[]>(this.config.apiEndpoint).subscribe({
       next: data => {
-        this.allData = data || [];
+        this.allData = Array.isArray(data) ? data : [];
+        this.updateAvailableFilterFields(this.allData);
         setTimeout(() => {
           this.queryTabs[0].title = 'All Data';
           this.queryTabs[0].dataSource = this.allData;
@@ -198,6 +206,11 @@ export class DataQueryComponent implements OnInit {
       },
       error: err => {
         console.error('Failed to load initial data', err);
+        if ((this.config.mockData?.length ?? 0) > 0) {
+          this.useMockData();
+          return;
+        }
+
         setTimeout(() => {
           this.queryTabs[0].title = 'Error Loading Data';
           this.syncExportContext();
@@ -211,7 +224,7 @@ export class DataQueryComponent implements OnInit {
     if (!Array.isArray(conditions)) {
       conditions = [];
     }
-    const criteria = conditions.map(c => `${c.field} ${c.operator} ${c.value}`);
+    const criteria = conditions.map(c => `${c.field} ${c.operator} ${this.formatConditionValue(c.value)}`);
     const title = criteria.length > 0 ? criteria.join(', ') : `Query ${this.tabCounter}`;
     this.tabCounter++;
 
@@ -263,9 +276,11 @@ export class DataQueryComponent implements OnInit {
             if (cond.operator === 'LIKE' && String(val).toLowerCase().indexOf(String(cond.value).toLowerCase()) === -1)
               return false;
             if (cond.operator === 'IN') {
-              const list = String(cond.value)
-                .split(',')
-                .map(s => s.trim());
+              const list = Array.isArray(cond.value)
+                ? cond.value.map(value => String(value).trim())
+                : String(cond.value)
+                    .split(',')
+                    .map(s => s.trim());
               if (!list.includes(String(val))) return false;
             }
           }
@@ -647,6 +662,21 @@ export class DataQueryComponent implements OnInit {
     }
   }
 
+  private useMockData() {
+    this.allData = [...(this.config.mockData ?? [])];
+    this.updateAvailableFilterFields(this.allData);
+
+    setTimeout(() => {
+      this.queryTabs[0].title = 'All Data (Mock)';
+      this.queryTabs[0].dataSource = this.allData;
+      if (this.gridApi) {
+        this.gridApi.setGridOption('rowData', this.allData);
+        this.scheduleColumnAutoSize();
+      }
+      this.syncExportContext();
+    });
+  }
+
   private withReadableHeaders(columnDefs: ColDef[]): ColDef[] {
     return columnDefs.map(columnDef => {
       const minWidth = this.getPreferredMinWidth(columnDef);
@@ -924,5 +954,64 @@ export class DataQueryComponent implements OnInit {
       reader.onerror = () => reject(reader.error || new Error('Failed to convert blob to base64.'));
       reader.readAsDataURL(blob);
     });
+  }
+
+  // Recompute dropdown options only when the backing dataset changes.
+  private updateAvailableFilterFields(data: ReadonlyArray<Record<string, unknown>>) {
+    this.dropdownOptions = this.buildDropdownOptions(this.config.filterFields, data);
+    this.availableFilterFields = this.config.filterFields.map(field => {
+      if (field.type !== 'dropdown') {
+        return field;
+      }
+
+      const options = this.dropdownOptions[field.name] ?? [];
+      return {
+        ...field,
+        dropdownOptions: options.map(option => ({ label: option, value: option }))
+      };
+    });
+  }
+
+  private buildDropdownOptions(
+    filterFields: FilterField[],
+    data: ReadonlyArray<Record<string, unknown>>
+  ): Record<string, string[]> {
+    const dropdownFields = filterFields.filter(field => field.type === 'dropdown');
+    if (dropdownFields.length === 0) {
+      return {};
+    }
+
+    const optionSets = new Map<string, Set<string>>();
+    dropdownFields.forEach(field => {
+      const configuredOptions = field.dropdownOptions?.map(option => option.value) ?? [];
+      optionSets.set(field.name, new Set([...configuredOptions, ...(field.mockOptions ?? [])]));
+    });
+
+    data.forEach(row => {
+      dropdownFields.forEach(field => {
+        const rawValue = row[field.name];
+        if (rawValue == null) {
+          return;
+        }
+
+        const normalizedValue = String(rawValue).trim();
+        if (!normalizedValue) {
+          return;
+        }
+
+        optionSets.get(field.name)?.add(normalizedValue);
+      });
+    });
+
+    return dropdownFields.reduce<Record<string, string[]>>((acc, field) => {
+      acc[field.name] = Array.from(optionSets.get(field.name) ?? []).sort((left, right) =>
+        left.localeCompare(right, undefined, DataQueryComponent.dropdownOptionSortOptions)
+      );
+      return acc;
+    }, {});
+  }
+
+  private formatConditionValue(value: string | boolean): string {
+    return typeof value === 'boolean' ? String(value) : value;
   }
 }

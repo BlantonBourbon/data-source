@@ -1,11 +1,13 @@
+import { fakeAsync, tick } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
 import { MatDialog } from '@angular/material/dialog';
 import { MatMenuTrigger } from '@angular/material/menu';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
-import { BuiltinModules } from '../../core/config/data-query.config';
+import { BuiltinModules, DataQueryConfig } from '../../core/config/data-query.config';
 import { AuthService } from '../../core/services/auth.service';
 import { DataQueryComponent } from './data-query.component';
+import { QueryCondition } from '../../shared/components/query-builder/query-builder.component';
 
 describe('DataQueryComponent', () => {
   let http: jasmine.SpyObj<HttpClient>;
@@ -17,11 +19,7 @@ describe('DataQueryComponent', () => {
     http = jasmine.createSpyObj<HttpClient>('HttpClient', ['get', 'post']);
     dialog = jasmine.createSpyObj<MatDialog>('MatDialog', ['open']);
 
-    component = new DataQueryComponent(http, dialog, {
-      currentUserValue: {
-        email: 'alice@example.com'
-      }
-    } as AuthService);
+    component = createComponent(http, dialog);
     emailSettingsTrigger = jasmine.createSpyObj<MatMenuTrigger>('MatMenuTrigger', ['openMenu', 'closeMenu']);
 
     component.config = BuiltinModules['xms'];
@@ -95,11 +93,7 @@ describe('DataQueryComponent', () => {
   });
 
   it('shows inline feedback when the sender email cannot be determined', () => {
-    component = new DataQueryComponent(http, dialog, {
-      currentUserValue: {
-        email: undefined
-      }
-    } as AuthService);
+    component = createComponent(http, dialog, undefined);
 
     component.config = BuiltinModules['xms'];
     component.queryTabs = [
@@ -252,4 +246,117 @@ describe('DataQueryComponent', () => {
 
     jasmine.clock().uninstall();
   });
+
+  it('builds dropdown options from the initialized dataset', fakeAsync(() => {
+    http.get.and.returnValue(
+      of([
+        { id: 1, tradeType: 'SPOT', currency: 'USD' },
+        { id: 2, tradeType: 'FORWARD', currency: 'EUR' },
+        { id: 3, tradeType: 'SPOT', currency: 'USD' }
+      ])
+    );
+
+    const dropdownComponent = createComponent(http, dialog);
+    dropdownComponent.config = createConfig();
+
+    dropdownComponent.ngOnInit();
+    tick();
+
+    expect(dropdownComponent.dropdownOptions['tradeType']).toEqual(['FORWARD', 'SPOT']);
+    expect(dropdownComponent.dropdownOptions['currency']).toEqual(['EUR', 'USD']);
+    expect(dropdownComponent.availableFilterFields.find(field => field.name === 'tradeType')?.dropdownOptions).toEqual([
+      { label: 'FORWARD', value: 'FORWARD' },
+      { label: 'SPOT', value: 'SPOT' }
+    ]);
+    expect(dropdownComponent.queryTabs[0].title).toBe('All Data');
+    expect(dropdownComponent.queryTabs[0].dataSource.length).toBe(3);
+  }));
+
+  it('falls back to mock data when the initial request fails', fakeAsync(() => {
+    http.get.and.returnValue(throwError(() => new Error('backend unavailable')));
+
+    const dropdownComponent = createComponent(http, dialog);
+    dropdownComponent.config = createConfig({
+      mockData: [
+        { id: 1, tradeType: 'SPOT', currency: 'USD', tradeDate: '2026-01-01' },
+        { id: 2, tradeType: 'SWAP', currency: 'JPY', tradeDate: '2026-01-02' }
+      ]
+    });
+
+    dropdownComponent.ngOnInit();
+    tick();
+
+    expect(dropdownComponent.allData).toEqual(dropdownComponent.config.mockData ?? []);
+    expect(dropdownComponent.dropdownOptions['tradeType']).toEqual(['SPOT', 'SWAP']);
+    expect(dropdownComponent.queryTabs[0].title).toBe('All Data (Mock)');
+  }));
+
+  it('uses comma-separated IN conditions during local fallback filtering', fakeAsync(() => {
+    http.post.and.returnValue(throwError(() => new Error('query failed')));
+
+    const dropdownComponent = createComponent(http, dialog);
+    dropdownComponent.config = createConfig();
+    dropdownComponent.colDefs = [];
+    dropdownComponent.allData = [
+      { id: 1, tradeType: 'SPOT', currency: 'USD' },
+      { id: 2, tradeType: 'FORWARD', currency: 'EUR' },
+      { id: 3, tradeType: 'SWAP', currency: 'USD' }
+    ];
+
+    const conditions: QueryCondition[] = [
+      {
+        field: 'tradeType',
+        operator: 'IN',
+        value: 'SPOT,SWAP'
+      }
+    ];
+
+    dropdownComponent.onQuerySubmit(conditions);
+    tick();
+
+    expect(dropdownComponent.queryTabs[0].title).toContain('tradeType IN SPOT,SWAP');
+    expect(dropdownComponent.queryTabs[0].title).toContain('(Local)');
+    expect(dropdownComponent.queryTabs[0].dataSource).toEqual([
+      { id: 1, tradeType: 'SPOT', currency: 'USD' },
+      { id: 3, tradeType: 'SWAP', currency: 'USD' }
+    ]);
+  }));
 });
+
+function createComponent(
+  http: jasmine.SpyObj<HttpClient>,
+  dialog: jasmine.SpyObj<MatDialog>,
+  email?: string
+): DataQueryComponent {
+  const resolvedEmail = arguments.length < 3 ? 'alice@example.com' : email;
+  return new DataQueryComponent(http, dialog, {
+    currentUserValue: {
+      email: resolvedEmail
+    }
+  } as AuthService);
+}
+
+function createConfig(overrides: Partial<DataQueryConfig> = {}): DataQueryConfig {
+  return {
+    id: 'xms',
+    name: 'XMS Module',
+    description: 'Query trades',
+    bgStyle: 'linear-gradient(135deg, #1b539c 0%, #089fd1 100%)',
+    logo: 'XMS',
+    authorization: {
+      permissions: ['module:xms:read'],
+      match: 'all'
+    },
+    apiEndpoint: '/api/user/trades',
+    metricEndpoint: '/api/user/trades/metric',
+    filterFields: [
+      { name: 'tradeType', label: 'Trade Type', type: 'dropdown', mockOptions: ['SPOT'] },
+      { name: 'currency', label: 'Currency', type: 'dropdown' },
+      { name: 'tradeDate', label: 'Trade Date', type: 'date' }
+    ],
+    numericColumns: ['amount', 'id'],
+    groupByFields: ['tradeType', 'currency'],
+    colDefs: [],
+    ...overrides
+  };
+}

@@ -100,7 +100,8 @@ public class SecurityConfiguration {
                                                        OAuth2UserService<OAuth2UserRequest, OAuth2User> oauth2UserService) throws Exception {
         http.securityMatcher("/api/user/**", "/api/me", "/api/auth/**", "/oauth2/**", "/login/oauth2/**", "/h2-console/**")
                 .authorizeHttpRequests(authorize -> {
-                    authorize.requestMatchers("/api/auth/login", "/api/auth/logout", "/oauth2/**", "/login/oauth2/**").permitAll();
+                    authorize.requestMatchers("/api/auth/login", "/api/auth/logout", "/oauth2/**", "/login/oauth2/**")
+                            .permitAll();
                     if (securityProperties.isH2ConsoleEnabled()) {
                         authorize.requestMatchers("/h2-console/**").permitAll();
                     }

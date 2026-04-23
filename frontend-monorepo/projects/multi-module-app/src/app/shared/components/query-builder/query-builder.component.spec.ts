@@ -1,6 +1,5 @@
 import { FormBuilder } from '@angular/forms';
 
-import { BuiltinModules } from '../../../core/config/data-query.config';
 import { QueryBuilderComponent } from './query-builder.component';
 
 describe('QueryBuilderComponent', () => {
@@ -8,14 +7,26 @@ describe('QueryBuilderComponent', () => {
 
   beforeEach(() => {
     component = new QueryBuilderComponent(new FormBuilder());
-    component.availableFields = BuiltinModules['xms'].filterFields;
+    component.availableFields = [
+      {
+        name: 'tradeType',
+        label: 'Trade Type',
+        type: 'dropdown',
+        dropdownOptions: [
+          { label: 'Spot', value: 'Spot' },
+          { label: 'Forward', value: 'Forward' }
+        ]
+      },
+      { name: 'counterparty', label: 'Counterparty', type: 'string' },
+      { name: 'tradeDate', label: 'Trade Date', type: 'date' }
+    ];
     component.initForm();
   });
 
   it('keeps quick search separate from advanced filters', () => {
     spyOn(component.querySubmit, 'emit');
     component.queryForm.get('simpleSearch')?.setValue('USD');
-    component.advancedForm.patchValue({ tradeType: 'Spot' });
+    component.advancedForm.patchValue({ tradeType: ['Spot'] });
 
     component.onSearchClick();
 
@@ -24,7 +35,7 @@ describe('QueryBuilderComponent', () => {
 
   it('counts active advanced filters by field', () => {
     component.advancedForm.patchValue({
-      tradeType: 'Spot',
+      tradeType: ['Spot'],
       tradeDate_start: new Date('2024-03-01'),
       tradeDate_end: new Date('2024-03-31')
     });
@@ -34,7 +45,7 @@ describe('QueryBuilderComponent', () => {
 
   it('clears only advanced values from the floating panel', () => {
     component.queryForm.get('simpleSearch')?.setValue('counterparty');
-    component.advancedForm.patchValue({ tradeType: 'Spot' });
+    component.advancedForm.patchValue({ tradeType: ['Spot'] });
 
     component.clearAdvancedFilters();
 
@@ -56,14 +67,14 @@ describe('QueryBuilderComponent', () => {
     spyOn(component.querySubmit, 'emit');
     component.isAdvancedOpen = true;
     component.advancedForm.patchValue({
-      tradeType: 'Spot',
+      tradeType: ['Spot'],
       tradeDate_start: new Date('2024-03-01')
     });
 
     component.applyAdvancedFilters();
 
     expect(component.querySubmit.emit).toHaveBeenCalledWith([
-      { field: 'tradeType', operator: 'LIKE', value: 'Spot' },
+      { field: 'tradeType', operator: '=', value: 'Spot' },
       { field: 'tradeDate', operator: '>=', value: '2024-03-01' }
     ]);
     expect(component.isAdvancedOpen).toBeFalse();
